@@ -154,7 +154,22 @@ class BupleurumDatabase:
             ''')
             
             conn.commit()
-    
+    def get_statistics(self) -> Dict[str, int]:
+        """获取数据库统计信息"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM bupleurum_species")
+            total_species = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM varieties")
+            total_varieties = cursor.fetchone()[0]
+            
+            return {
+                'total_species': total_species,
+                'total_varieties': total_varieties
+            }
+        
     def add_species(self, species_data: Dict[str, Any]) -> int:
         """添加柴胡品种"""
         with self.connect() as conn:
@@ -1160,4 +1175,5 @@ def render_browse_all():
 
 if __name__ == "__main__":
     main()
+
 
