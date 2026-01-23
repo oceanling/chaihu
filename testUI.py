@@ -1,4 +1,3 @@
-# 在 BupleurumDatabase 类中添加 import_from_csv 方法
 import streamlit as st
 import sqlite3
 import re
@@ -276,23 +275,6 @@ class BupleurumDatabase:
             
             return results
     
-    def get_species_by_id(self, species_id: int) -> Optional[Dict[str, Any]]:
-        """根据ID获取柴胡品种"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            
-            # 获取主品种信息
-            cursor.execute("SELECT * FROM bupleurum_species WHERE id = ?", (species_id,))
-            row = cursor.fetchone()
-            
-            if row:
-                result = dict(row)
-                # 获取变种信息
-                result['varieties'] = self.get_varieties(species_id)
-                return result
-            
-            return None
-    
     def get_varieties(self, species_id: int) -> List[Dict[str, str]]:
         """获取品种的变种信息"""
         with self.connect() as conn:
@@ -352,10 +334,12 @@ class BupleurumDatabase:
             df = pd.DataFrame(species_data)
             
             # 删除不需要的列
-            columns_to_drop = ['id', 'created_at', 'updated_at']
-            for col in columns_to_drop:
-                if col in df.columns:
-                    df = df.drop(columns=[col])
+            if 'id' in df.columns:
+                df = df.drop(columns=['id'])
+            if 'created_at' in df.columns:
+                df = df.drop(columns=['created_at'])
+            if 'updated_at' in df.columns:
+                df = df.drop(columns=['updated_at'])
             
             return df.to_csv(index=False, encoding='utf-8-sig')
 
@@ -938,6 +922,31 @@ def truncate_text(text: str, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
+
+def get_database():
+    """获取数据库实例"""
+    return BupleurumDatabase()
+
+# 数据库方法扩展
+def get_species_by_id(self, species_id: int) -> Optional[Dict[str, Any]]:
+    """根据ID获取柴胡品种"""
+    with self.connect() as conn:
+        cursor = conn.cursor()
+        
+        # 获取主品种信息
+        cursor.execute("SELECT * FROM bupleurum_species WHERE id = ?", (species_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            result = dict(row)
+            # 获取变种信息
+            result['varieties'] = self.get_varieties(species_id)
+            return result
+        
+        return None
+
+# 给数据库类添加方法
+BupleurumDatabase.get_species_by_id = get_species_by_id
 
 # 主应用
 def main():
