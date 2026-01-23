@@ -1,4 +1,3 @@
-# 在 BupleurumDatabase 类中添加 import_from_csv 方法
 import streamlit as st
 import sqlite3
 import re
@@ -154,6 +153,7 @@ class BupleurumDatabase:
             ''')
             
             conn.commit()
+    
     def get_statistics(self) -> Dict[str, int]:
         """获取数据库统计信息"""
         with self.connect() as conn:
@@ -169,7 +169,7 @@ class BupleurumDatabase:
                 'total_species': total_species,
                 'total_varieties': total_varieties
             }
-        
+    
     def add_species(self, species_data: Dict[str, Any]) -> int:
         """添加柴胡品种"""
         with self.connect() as conn:
@@ -208,58 +208,58 @@ class BupleurumDatabase:
             conn.commit()
             return species_id
     
-def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
-    """从DataFrame批量导入数据"""
-    results = {
-        'total': len(df),
-        'success': 0,
-        'failed': 0,
-        'errors': []
-    }
-    
-    for idx, row in df.iterrows():
-        try:
-            # 处理变种信息
-            varieties = []
-            if 'varieties' in row and pd.notna(row['varieties']):
-                var_list = str(row['varieties']).split(';')
-                for var_name in var_list:
-                    if var_name.strip():
-                        varieties.append({
-                            'name_chinese': var_name.strip(),
-                            'description': ''
-                        })
-            
-            # 准备物种数据
-            species_data = {
-                'name_chinese': str(row.get('name_chinese', '')).strip(),
-                'name_latin': str(row.get('name_latin', '')).strip(),
-                'root': str(row.get('root', '')).strip(),
-                'stem': str(row.get('stem', '')).strip(),
-                'leaf': str(row.get('leaf', '')).strip(),
-                'flower_inflorescence': str(row.get('flower_inflorescence', '')).strip(),
-                'fruit': str(row.get('fruit', '')).strip(),
-                'flowering_fruiting': str(row.get('flowering_fruiting', '')).strip(),
-                'habitat': str(row.get('habitat', '')).strip(),
-                'medicinal_use': str(row.get('medicinal_use', '')).strip(),
-                'notes': str(row.get('notes', '')).strip(),
-                'varieties': varieties
-            }
-            
-            # 确保中文名不为空
-            if not species_data['name_chinese']:
-                raise ValueError("中文名不能为空")
-            
-            # 添加物种
-            self.add_species(species_data)
-            results['success'] += 1
-            
-        except Exception as e:
-            results['failed'] += 1
-            species_name = str(row.get('name_chinese', f"行{idx+1}")).strip()
-            results['errors'].append(f"{species_name}: {str(e)}")
-    
-    return results
+    def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """从DataFrame批量导入数据"""
+        results = {
+            'total': len(df),
+            'success': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for idx, row in df.iterrows():
+            try:
+                # 处理变种信息
+                varieties = []
+                if 'varieties' in row and pd.notna(row['varieties']):
+                    var_list = str(row['varieties']).split(';')
+                    for var_name in var_list:
+                        if var_name.strip():
+                            varieties.append({
+                                'name_chinese': var_name.strip(),
+                                'description': ''
+                            })
+                
+                # 准备物种数据
+                species_data = {
+                    'name_chinese': str(row.get('name_chinese', '')).strip(),
+                    'name_latin': str(row.get('name_latin', '')).strip(),
+                    'root': str(row.get('root', '')).strip(),
+                    'stem': str(row.get('stem', '')).strip(),
+                    'leaf': str(row.get('leaf', '')).strip(),
+                    'flower_inflorescence': str(row.get('flower_inflorescence', '')).strip(),
+                    'fruit': str(row.get('fruit', '')).strip(),
+                    'flowering_fruiting': str(row.get('flowering_fruiting', '')).strip(),
+                    'habitat': str(row.get('habitat', '')).strip(),
+                    'medicinal_use': str(row.get('medicinal_use', '')).strip(),
+                    'notes': str(row.get('notes', '')).strip(),
+                    'varieties': varieties
+                }
+                
+                # 确保中文名不为空
+                if not species_data['name_chinese']:
+                    raise ValueError("中文名不能为空")
+                
+                # 添加物种
+                self.add_species(species_data)
+                results['success'] += 1
+                
+            except Exception as e:
+                results['failed'] += 1
+                species_name = str(row.get('name_chinese', f"行{idx+1}")).strip()
+                results['errors'].append(f"{species_name}: {str(e)}")
+        
+        return results
     
     def search_species_fts(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
         """使用全文搜索查询柴胡品种"""
@@ -321,22 +321,6 @@ def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
             cursor = conn.cursor()
             cursor.execute("SELECT name_chinese FROM bupleurum_species ORDER BY name_chinese")
             return [row[0] for row in cursor.fetchall()]
-    
-    def get_statistics(self) -> Dict[str, int]:
-        """获取数据库统计信息"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT COUNT(*) FROM bupleurum_species")
-            total_species = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(*) FROM varieties")
-            total_varieties = cursor.fetchone()[0]
-            
-            return {
-                'total_species': total_species,
-                'total_varieties': total_varieties
-            }
     
     def clear_database(self):
         """清空数据库"""
@@ -628,7 +612,7 @@ def display_species_grid(results: List[Dict[str, Any]]):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("📖 查看详情", key=f"view_{species['id']}", use_container_width=True):
+                if st.button("📖 查看详情", key=f"view_{species['id']}", width='stretch'):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
@@ -647,7 +631,7 @@ def display_species_list(results: List[Dict[str, Any]]):
                 if species.get('varieties'):
                     st.write("**变种:**", ", ".join([v['name_chinese'] for v in species['varieties']]))
             
-            if st.button("查看完整信息", key=f"full_{species['id']}"):
+            if st.button("查看完整信息", key=f"full_{species['id']}", width='stretch'):
                 st.session_state['selected_species'] = species['id']
                 st.rerun()
 
@@ -674,7 +658,7 @@ def display_species_table(results: List[Dict[str, Any]]):
     )
     
     if selected_id:
-        if st.button("查看选中品种", use_container_width=True):
+        if st.button("查看选中品种", width='stretch'):
             st.session_state['selected_species'] = int(selected_id)
             st.rerun()
 
@@ -688,7 +672,7 @@ def render_species_detail(species_id: int):
         return
     
     # 返回按钮
-    if st.button("← 返回搜索结果", use_container_width=True):
+    if st.button("← 返回搜索结果", width='stretch'):
         if 'selected_species' in st.session_state:
             del st.session_state['selected_species']
         st.rerun()
@@ -803,7 +787,7 @@ def render_add_species():
             if var_name:
                 varieties.append({'name_chinese': var_name, 'description': var_desc})
         
-        submitted = st.form_submit_button("✅ 提交新品种", use_container_width=True)
+        submitted = st.form_submit_button("✅ 提交新品种", width='stretch')
         
         if submitted:
             if not name_chinese:
@@ -844,12 +828,12 @@ def render_add_species():
     # 变种管理按钮（在表单外）
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
     with col_btn1:
-        if st.button("➕ 添加变种", use_container_width=True):
+        if st.button("➕ 添加变种", width='stretch'):
             st.session_state.variety_count += 1
             st.rerun()
     
     with col_btn2:
-        if st.button("➖ 减少变种", use_container_width=True):
+        if st.button("➖ 减少变种", width='stretch'):
             if st.session_state.variety_count > 1:
                 st.session_state.variety_count -= 1
             st.rerun()
@@ -887,7 +871,7 @@ def render_data_management():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 重建索引", use_container_width=True):
+            if st.button("🔄 重建索引", width='stretch'):
                 try:
                     # 重建全文搜索索引
                     with db.connect() as conn:
@@ -908,7 +892,7 @@ def render_data_management():
                     st.error(f"❌ 重建索引失败：{str(e)}")
         
         with col2:
-            if st.button("🧹 清理缓存", use_container_width=True):
+            if st.button("🧹 清理缓存", width='stretch'):
                 st.cache_resource.clear()
                 st.success("✅ 缓存已清理")
         
@@ -916,7 +900,7 @@ def render_data_management():
         with st.expander("🚨 危险区域", expanded=False):
             st.error("以下操作不可逆！")
             
-            if st.button("🗑️ 清空数据库", type="secondary", use_container_width=True):
+            if st.button("🗑️ 清空数据库", type="secondary", width='stretch'):
                 st.warning("这将删除所有数据！")
                 confirm = st.checkbox("我确认要清空数据库")
                 
@@ -930,7 +914,7 @@ def render_data_management():
         st.markdown("### 📤 导出数据")
         st.info("将当前数据库中的所有数据导出为CSV文件")
         
-        if st.button("📥 导出数据为CSV", use_container_width=True):
+        if st.button("📥 导出数据为CSV", width='stretch'):
             try:
                 csv_data = db.export_to_csv()
                 
@@ -973,7 +957,7 @@ def main():
         st.write(f"🌿 变种数: **{stats['total_varieties']}**")
         
         st.markdown("---")
-        if st.button("🔄 刷新页面", use_container_width=True):
+        if st.button("🔄 刷新页面", width='stretch'):
             st.rerun()
     
     # 根据选择显示页面
@@ -1129,7 +1113,7 @@ def render_browse_all():
     # 分页控件
     col1, col2, col3 = st.columns([2, 3, 2])
     with col1:
-        if st.button("◀️ 上一页", disabled=st.session_state.browse_page <= 1):
+        if st.button("◀️ 上一页", disabled=st.session_state.browse_page <= 1, width='stretch'):
             st.session_state.browse_page -= 1
             st.rerun()
     
@@ -1137,7 +1121,7 @@ def render_browse_all():
         st.markdown(f"<center>第 {st.session_state.browse_page} / {total_pages} 页</center>", unsafe_allow_html=True)
     
     with col3:
-        if st.button("下一页 ▶️", disabled=st.session_state.browse_page >= total_pages):
+        if st.button("下一页 ▶️", disabled=st.session_state.browse_page >= total_pages, width='stretch'):
             st.session_state.browse_page += 1
             st.rerun()
     
@@ -1169,11 +1153,9 @@ def render_browse_all():
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
                 
-                if st.button("查看详情", key=f"browse_{species['id']}", use_container_width=True):
+                if st.button("查看详情", key=f"browse_{species['id']}", width='stretch'):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
 if __name__ == "__main__":
     main()
-
-
