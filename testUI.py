@@ -146,10 +146,10 @@ class BupleurumDatabase:
             )
             ''')
             
-            # 创建全文搜索索引
+            # 创建全文搜索索引 - 修复：添加name_latin列
             cursor.execute('''
             CREATE VIRTUAL TABLE IF NOT EXISTS species_fts USING fts5(
-                name_chinese, root, stem, leaf, flower_inflorescence, 
+                name_chinese, name_latin, root, stem, leaf, flower_inflorescence, 
                 fruit, flowering_fruiting, habitat, medicinal_use, notes
             )
             ''')
@@ -201,11 +201,25 @@ class BupleurumDatabase:
                         (species_id, variety.get('name_chinese', ''), variety.get('description', ''))
                     )
             
-            # 更新全文搜索索引
+            # 更新全文搜索索引 - 修复：确保列的顺序与创建时一致
+            fts_columns = [
+                'name_chinese', 'name_latin', 'root', 'stem', 'leaf',
+                'flower_inflorescence', 'fruit', 'flowering_fruiting',
+                'habitat', 'medicinal_use', 'notes'
+            ]
+            
+            # 获取每个列的值，如果species_data中没有该列则使用空字符串
+            fts_values = []
+            for col in fts_columns:
+                if col in species_data:
+                    fts_values.append(species_data[col])
+                else:
+                    fts_values.append('')
+            
             cursor.execute(f"""
-            INSERT OR REPLACE INTO species_fts(rowid, {', '.join(columns)})
-            VALUES (?, {', '.join(['?'] * len(columns))})
-            """, [species_id] + values)
+            INSERT OR REPLACE INTO species_fts(rowid, {', '.join(fts_columns)})
+            VALUES (?, {', '.join(['?'] * len(fts_columns))})
+            """, [species_id] + fts_values)
             
             conn.commit()
             return species_id
@@ -903,10 +917,10 @@ def render_data_management():
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM species_fts")
                         cursor.execute("""
-                        INSERT INTO species_fts(rowid, name_chinese, root, stem, leaf, 
+                        INSERT INTO species_fts(rowid, name_chinese, name_latin, root, stem, leaf, 
                                               flower_inflorescence, fruit, flowering_fruiting, 
                                               habitat, medicinal_use, notes)
-                        SELECT id, name_chinese, root, stem, leaf, 
+                        SELECT id, name_chinese, name_latin, root, stem, leaf, 
                                flower_inflorescence, fruit, flowering_fruiting, 
                                habitat, medicinal_use, notes
                         FROM bupleurum_species
