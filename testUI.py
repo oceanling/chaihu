@@ -193,58 +193,58 @@ class BupleurumDatabase:
             conn.commit()
             return species_id
     
-    def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """从DataFrame批量导入数据"""
-        results = {
-            'total': len(df),
-            'success': 0,
-            'failed': 0,
-            'errors': []
-        }
-        
-        for idx, row in df.iterrows():
-            try:
-                # 处理变种信息
-                varieties = []
-                if 'varieties' in row and pd.notna(row['varieties']):
-                    var_list = str(row['varieties']).split(';')
-                    for var_name in var_list:
-                        if var_name.strip():
-                            varieties.append({
-                                'name_chinese': var_name.strip(),
-                                'description': ''
-                            })
-                
-                # 准备物种数据
-                species_data = {
-                    'name_chinese': str(row.get('name_chinese', '')).strip(),
-                    'name_latin': str(row.get('name_latin', '')).strip(),
-                    'root': str(row.get('root', '')).strip(),
-                    'stem': str(row.get('stem', '')).strip(),
-                    'leaf': str(row.get('leaf', '')).strip(),
-                    'flower_inflorescence': str(row.get('flower_inflorescence', '')).strip(),
-                    'fruit': str(row.get('fruit', '')).strip(),
-                    'flowering_fruiting': str(row.get('flowering_fruiting', '')).strip(),
-                    'habitat': str(row.get('habitat', '')).strip(),
-                    'medicinal_use': str(row.get('medicinal_use', '')).strip(),
-                    'notes': str(row.get('notes', '')).strip(),
-                    'varieties': varieties
-                }
-                
-                # 确保中文名不为空
-                if not species_data['name_chinese']:
-                    raise ValueError("中文名不能为空")
-                
-                # 添加物种
-                self.add_species(species_data)
-                results['success'] += 1
-                
-            except Exception as e:
-                results['failed'] += 1
-                species_name = str(row.get('name_chinese', f"行{idx+1}")).strip()
-                results['errors'].append(f"{species_name}: {str(e)}")
-        
-        return results
+def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
+    """从DataFrame批量导入数据"""
+    results = {
+        'total': len(df),
+        'success': 0,
+        'failed': 0,
+        'errors': []
+    }
+    
+    for idx, row in df.iterrows():
+        try:
+            # 处理变种信息
+            varieties = []
+            if 'varieties' in row and pd.notna(row['varieties']):
+                var_list = str(row['varieties']).split(';')
+                for var_name in var_list:
+                    if var_name.strip():
+                        varieties.append({
+                            'name_chinese': var_name.strip(),
+                            'description': ''
+                        })
+            
+            # 准备物种数据
+            species_data = {
+                'name_chinese': str(row.get('name_chinese', '')).strip(),
+                'name_latin': str(row.get('name_latin', '')).strip(),
+                'root': str(row.get('root', '')).strip(),
+                'stem': str(row.get('stem', '')).strip(),
+                'leaf': str(row.get('leaf', '')).strip(),
+                'flower_inflorescence': str(row.get('flower_inflorescence', '')).strip(),
+                'fruit': str(row.get('fruit', '')).strip(),
+                'flowering_fruiting': str(row.get('flowering_fruiting', '')).strip(),
+                'habitat': str(row.get('habitat', '')).strip(),
+                'medicinal_use': str(row.get('medicinal_use', '')).strip(),
+                'notes': str(row.get('notes', '')).strip(),
+                'varieties': varieties
+            }
+            
+            # 确保中文名不为空
+            if not species_data['name_chinese']:
+                raise ValueError("中文名不能为空")
+            
+            # 添加物种
+            self.add_species(species_data)
+            results['success'] += 1
+            
+        except Exception as e:
+            results['failed'] += 1
+            species_name = str(row.get('name_chinese', f"行{idx+1}")).strip()
+            results['errors'].append(f"{species_name}: {str(e)}")
+    
+    return results
     
     def search_species_fts(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
         """使用全文搜索查询柴胡品种"""
@@ -1160,3 +1160,4 @@ def render_browse_all():
 
 if __name__ == "__main__":
     main()
+
