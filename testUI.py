@@ -108,6 +108,8 @@ class BupleurumDatabase:
         """连接到数据库"""
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
+        # 启用外键约束
+        self.conn.execute("PRAGMA foreign_keys = ON")
         return self.conn
     
     def initialize_database(self):
@@ -150,7 +152,9 @@ class BupleurumDatabase:
             cursor.execute('''
             CREATE VIRTUAL TABLE IF NOT EXISTS species_fts USING fts5(
                 name_chinese, name_latin, root, stem, leaf, flower_inflorescence, 
-                fruit, flowering_fruiting, habitat, medicinal_use, notes
+                fruit, flowering_fruiting, habitat, medicinal_use, notes,
+                content='bupleurum_species',
+                content_rowid='id'
             )
             ''')
             
@@ -201,7 +205,7 @@ class BupleurumDatabase:
                         (species_id, variety.get('name_chinese', ''), variety.get('description', ''))
                     )
             
-            # 更新全文搜索索引 - 修复：确保列的顺序与创建时一致
+            # 更新全文搜索索引 - 修复：使用正确的列名
             fts_columns = [
                 'name_chinese', 'name_latin', 'root', 'stem', 'leaf',
                 'flower_inflorescence', 'fruit', 'flowering_fruiting',
@@ -216,8 +220,12 @@ class BupleurumDatabase:
                 else:
                     fts_values.append('')
             
+            # 删除旧的FTS记录
+            cursor.execute("DELETE FROM species_fts WHERE rowid = ?", (species_id,))
+            
+            # 插入新的FTS记录
             cursor.execute(f"""
-            INSERT OR REPLACE INTO species_fts(rowid, {', '.join(fts_columns)})
+            INSERT INTO species_fts(rowid, {', '.join(fts_columns)})
             VALUES (?, {', '.join(['?'] * len(fts_columns))})
             """, [species_id] + fts_values)
             
@@ -285,7 +293,7 @@ class BupleurumDatabase:
         with self.connect() as conn:
             cursor = conn.cursor()
             
-            if not query:
+            if not query or query.strip() == "":
                 cursor.execute("""
                 SELECT bs.* 
                 FROM bupleurum_species bs
@@ -293,14 +301,27 @@ class BupleurumDatabase:
                 LIMIT ?
                 """, (limit,))
             else:
+                # 使用LIKE进行简单搜索，避免FTS5问题
+                search_pattern = f"%{query}%"
                 cursor.execute("""
                 SELECT bs.* 
                 FROM bupleurum_species bs
-                LEFT JOIN species_fts ON bs.id = species_fts.rowid
-                WHERE species_fts MATCH ?
-                ORDER BY rank
+                WHERE bs.name_chinese LIKE ? 
+                   OR bs.name_latin LIKE ? 
+                   OR bs.root LIKE ? 
+                   OR bs.stem LIKE ? 
+                   OR bs.leaf LIKE ? 
+                   OR bs.flower_inflorescence LIKE ? 
+                   OR bs.fruit LIKE ? 
+                   OR bs.flowering_fruiting LIKE ? 
+                   OR bs.habitat LIKE ? 
+                   OR bs.medicinal_use LIKE ? 
+                   OR bs.notes LIKE ?
+                ORDER BY bs.name_chinese
                 LIMIT ?
-                """, (f"{query}*", limit))
+                """, (search_pattern, search_pattern, search_pattern, search_pattern, 
+                      search_pattern, search_pattern, search_pattern, search_pattern,
+                      search_pattern, search_pattern, search_pattern, limit))
             
             results = []
             for row in cursor.fetchall():
@@ -456,7 +477,7 @@ def render_bulk_import():
         data=csv_template,
         file_name="柴胡导入模板.csv",
         mime="text/csv",
-        width='stretch'
+        use_container_width=True
     )
     
     st.markdown("---")
@@ -481,7 +502,7 @@ def render_bulk_import():
             
             # 显示预览
             st.markdown("### 👀 数据预览")
-            st.dataframe(df.head(), width='stretch')
+            st.dataframe(df.head(), use_container_width=True)
             
             # 显示实际读取到的列名
             st.markdown("#### 📝 检测到的列名")
@@ -512,7 +533,7 @@ def render_bulk_import():
                         st.metric("包含变种", 0)
                 
                 # 导入确认
-                if st.button("🚀 开始导入数据", type="primary", width='stretch'):
+                if st.button("🚀 开始导入数据", type="primary", use_container_width=True):
                     with st.spinner("正在导入数据..."):
                         result = db.import_from_csv(df)
                     
@@ -548,7 +569,7 @@ def render_bulk_import():
     st.markdown("---")
     st.markdown("### 📤 数据导出")
     
-    if st.button("📥 导出当前数据为CSV", width='stretch'):
+    if st.button("📥 导出当前数据为CSV", use_container_width=True):
         try:
             csv_data = db.export_to_csv()
             st.download_button(
@@ -556,7 +577,7 @@ def render_bulk_import():
                 data=csv_data,
                 file_name="柴胡数据库导出.csv",
                 mime="text/csv",
-                width='stretch'
+                use_container_width=True
             )
             st.success("✅ 数据导出完成，请点击上方按钮下载")
         except Exception as e:
@@ -572,42 +593,14 @@ def render_search():
             "🔍 搜索柴胡品种", 
             placeholder="输入关键词：如'红棕色'、'线形叶'、'圆锥形根'..."
         )
-    with col2:
-        search_mode = st.selectbox("搜索模式", ["模糊搜索", "精确匹配"], index=0)
-    
-    # 高级筛选
-    with st.expander("🔎 高级筛选", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            root_filter = st.text_input("根特征", placeholder="如：圆柱形、红棕色")
-        with col2:
-            leaf_filter = st.text_input("叶特征", placeholder="如：线形、披针形")
-        with col3:
-            flower_filter = st.text_input("花特征", placeholder="如：黄色、伞形")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
     # 执行搜索
-    if search_query or root_filter or leaf_filter or flower_filter:
-        results = db.search_species_fts(search_query or "")
-        
-        # 应用高级筛选
-        filtered_results = []
-        for species in results:
-            match = True
-            
-            if root_filter and root_filter not in (species.get('root') or ''):
-                match = False
-            if leaf_filter and leaf_filter not in (species.get('leaf') or ''):
-                match = False
-            if flower_filter and flower_filter not in (species.get('flower_inflorescence') or ''):
-                match = False
-            
-            if match:
-                filtered_results.append(species)
-        
-        display_search_results(filtered_results)
-    elif search_query == "":
+    if search_query and search_query.strip() != "":
+        results = db.search_species_fts(search_query)
+        display_search_results(results)
+    else:
         # 显示最近添加的品种
         st.info("💡 试试搜索：北柴胡、红柴胡、竹叶柴胡...")
         recent_results = db.search_species_fts("", limit=6)
@@ -651,7 +644,7 @@ def display_species_grid(results: List[Dict[str, Any]]):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("📖 查看详情", key=f"view_{species['id']}", width='stretch'):
+                if st.button("📖 查看详情", key=f"view_{species['id']}", use_container_width=True):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
@@ -670,7 +663,7 @@ def display_species_list(results: List[Dict[str, Any]]):
                 if species.get('varieties'):
                     st.write("**变种:**", ", ".join([v['name_chinese'] for v in species['varieties']]))
             
-            if st.button("查看完整信息", key=f"full_{species['id']}", width='stretch'):
+            if st.button("查看完整信息", key=f"full_{species['id']}", use_container_width=True):
                 st.session_state['selected_species'] = species['id']
                 st.rerun()
 
@@ -688,7 +681,7 @@ def display_species_table(results: List[Dict[str, Any]]):
         })
     
     df = pd.DataFrame(table_data)
-    st.dataframe(df, width='stretch', hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
     
     selected_id = st.selectbox(
         "选择ID查看详情", 
@@ -697,7 +690,7 @@ def display_species_table(results: List[Dict[str, Any]]):
     )
     
     if selected_id:
-        if st.button("查看选中品种", width='stretch'):
+        if st.button("查看选中品种", use_container_width=True):
             st.session_state['selected_species'] = int(selected_id)
             st.rerun()
 
@@ -711,7 +704,7 @@ def render_species_detail(species_id: int):
         return
     
     # 返回按钮
-    if st.button("← 返回搜索结果", width='stretch'):
+    if st.button("← 返回搜索结果", use_container_width=True):
         if 'selected_species' in st.session_state:
             del st.session_state['selected_species']
         st.rerun()
@@ -826,7 +819,7 @@ def render_add_species():
             if var_name:
                 varieties.append({'name_chinese': var_name, 'description': var_desc})
         
-        submitted = st.form_submit_button("✅ 提交新品种", width='stretch')
+        submitted = st.form_submit_button("✅ 提交新品种", use_container_width=True)
         
         if submitted:
             if not name_chinese:
@@ -867,12 +860,12 @@ def render_add_species():
     # 变种管理按钮（在表单外）
     col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
     with col_btn1:
-        if st.button("➕ 添加变种", width='stretch'):
+        if st.button("➕ 添加变种", use_container_width=True):
             st.session_state.variety_count += 1
             st.rerun()
     
     with col_btn2:
-        if st.button("➖ 减少变种", width='stretch'):
+        if st.button("➖ 减少变种", use_container_width=True):
             if st.session_state.variety_count > 1:
                 st.session_state.variety_count -= 1
             st.rerun()
@@ -910,7 +903,7 @@ def render_data_management():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 重建索引", width='stretch'):
+            if st.button("🔄 重建索引", use_container_width=True):
                 try:
                     # 重建全文搜索索引
                     with db.connect() as conn:
@@ -931,7 +924,7 @@ def render_data_management():
                     st.error(f"❌ 重建索引失败：{str(e)}")
         
         with col2:
-            if st.button("🧹 清理缓存", width='stretch'):
+            if st.button("🧹 清理缓存", use_container_width=True):
                 st.cache_resource.clear()
                 st.success("✅ 缓存已清理")
         
@@ -939,7 +932,7 @@ def render_data_management():
         with st.expander("🚨 危险区域", expanded=False):
             st.error("以下操作不可逆！")
             
-            if st.button("🗑️ 清空数据库", type="secondary", width='stretch'):
+            if st.button("🗑️ 清空数据库", type="secondary", use_container_width=True):
                 st.warning("这将删除所有数据！")
                 confirm = st.checkbox("我确认要清空数据库")
                 
@@ -953,7 +946,7 @@ def render_data_management():
         st.markdown("### 📤 导出数据")
         st.info("将当前数据库中的所有数据导出为CSV文件")
         
-        if st.button("📥 导出数据为CSV", width='stretch'):
+        if st.button("📥 导出数据为CSV", use_container_width=True):
             try:
                 csv_data = db.export_to_csv()
                 
@@ -962,7 +955,7 @@ def render_data_management():
                     data=csv_data,
                     file_name=f"柴胡数据库_导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    width='stretch'
+                    use_container_width=True
                 )
                 
                 st.success("✅ 数据导出完成，请点击上方按钮下载")
@@ -997,7 +990,7 @@ def main():
         st.write(f"🌿 变种数: **{stats['total_varieties']}**")
         
         st.markdown("---")
-        if st.button("🔄 刷新页面", width='stretch'):
+        if st.button("🔄 刷新页面", use_container_width=True):
             st.rerun()
     
     # 根据选择显示页面
@@ -1153,7 +1146,7 @@ def render_browse_all():
     # 分页控件
     col1, col2, col3 = st.columns([2, 3, 2])
     with col1:
-        if st.button("◀️ 上一页", disabled=st.session_state.browse_page <= 1, width='stretch'):
+        if st.button("◀️ 上一页", disabled=st.session_state.browse_page <= 1, use_container_width=True):
             st.session_state.browse_page -= 1
             st.rerun()
     
@@ -1161,7 +1154,7 @@ def render_browse_all():
         st.markdown(f"<center>第 {st.session_state.browse_page} / {total_pages} 页</center>", unsafe_allow_html=True)
     
     with col3:
-        if st.button("下一页 ▶️", disabled=st.session_state.browse_page >= total_pages, width='stretch'):
+        if st.button("下一页 ▶️", disabled=st.session_state.browse_page >= total_pages, use_container_width=True):
             st.session_state.browse_page += 1
             st.rerun()
     
@@ -1193,7 +1186,7 @@ def render_browse_all():
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
                 
-                if st.button("查看详情", key=f"browse_{species['id']}", width='stretch'):
+                if st.button("查看详情", key=f"browse_{species['id']}", use_container_width=True):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
