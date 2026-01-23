@@ -90,6 +90,14 @@ def load_custom_css():
         text-align: center;
         margin-bottom: 1.5rem;
     }
+    
+    .search-filter-group {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        border: 1px solid #e9ecef;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -148,16 +156,6 @@ class BupleurumDatabase:
             )
             ''')
             
-            # 创建全文搜索索引 - 修复：添加name_latin列
-            cursor.execute('''
-            CREATE VIRTUAL TABLE IF NOT EXISTS species_fts USING fts5(
-                name_chinese, name_latin, root, stem, leaf, flower_inflorescence, 
-                fruit, flowering_fruiting, habitat, medicinal_use, notes,
-                content='bupleurum_species',
-                content_rowid='id'
-            )
-            ''')
-            
             conn.commit()
     
     def get_statistics(self) -> Dict[str, int]:
@@ -204,30 +202,6 @@ class BupleurumDatabase:
                         "INSERT INTO varieties (species_id, name_chinese, description) VALUES (?, ?, ?)",
                         (species_id, variety.get('name_chinese', ''), variety.get('description', ''))
                     )
-            
-            # 更新全文搜索索引 - 修复：使用正确的列名
-            fts_columns = [
-                'name_chinese', 'name_latin', 'root', 'stem', 'leaf',
-                'flower_inflorescence', 'fruit', 'flowering_fruiting',
-                'habitat', 'medicinal_use', 'notes'
-            ]
-            
-            # 获取每个列的值，如果species_data中没有该列则使用空字符串
-            fts_values = []
-            for col in fts_columns:
-                if col in species_data:
-                    fts_values.append(species_data[col])
-                else:
-                    fts_values.append('')
-            
-            # 删除旧的FTS记录
-            cursor.execute("DELETE FROM species_fts WHERE rowid = ?", (species_id,))
-            
-            # 插入新的FTS记录
-            cursor.execute(f"""
-            INSERT INTO species_fts(rowid, {', '.join(fts_columns)})
-            VALUES (?, {', '.join(['?'] * len(fts_columns))})
-            """, [species_id] + fts_values)
             
             conn.commit()
             return species_id
@@ -288,40 +262,62 @@ class BupleurumDatabase:
         
         return results
     
-    def search_species_fts(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """使用全文搜索查询柴胡品种"""
+    def search_species(self, query: str = "", filters: Dict[str, str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """搜索柴胡品种，支持关键词和高级筛选"""
         with self.connect() as conn:
             cursor = conn.cursor()
             
-            if not query or query.strip() == "":
-                cursor.execute("""
-                SELECT bs.* 
-                FROM bupleurum_species bs
-                ORDER BY bs.name_chinese
-                LIMIT ?
-                """, (limit,))
-            else:
-                # 使用LIKE进行简单搜索，避免FTS5问题
+            # 构建基础查询
+            base_sql = "SELECT * FROM bupleurum_species WHERE 1=1"
+            params = []
+            
+            # 关键词搜索（在多个字段中搜索）
+            if query and query.strip():
+                base_sql += """
+                AND (name_chinese LIKE ? 
+                     OR name_latin LIKE ? 
+                     OR root LIKE ? 
+                     OR stem LIKE ? 
+                     OR leaf LIKE ? 
+                     OR flower_inflorescence LIKE ? 
+                     OR fruit LIKE ? 
+                     OR flowering_fruiting LIKE ? 
+                     OR habitat LIKE ? 
+                     OR medicinal_use LIKE ? 
+                     OR notes LIKE ?)
+                """
                 search_pattern = f"%{query}%"
-                cursor.execute("""
-                SELECT bs.* 
-                FROM bupleurum_species bs
-                WHERE bs.name_chinese LIKE ? 
-                   OR bs.name_latin LIKE ? 
-                   OR bs.root LIKE ? 
-                   OR bs.stem LIKE ? 
-                   OR bs.leaf LIKE ? 
-                   OR bs.flower_inflorescence LIKE ? 
-                   OR bs.fruit LIKE ? 
-                   OR bs.flowering_fruiting LIKE ? 
-                   OR bs.habitat LIKE ? 
-                   OR bs.medicinal_use LIKE ? 
-                   OR bs.notes LIKE ?
-                ORDER BY bs.name_chinese
-                LIMIT ?
-                """, (search_pattern, search_pattern, search_pattern, search_pattern, 
-                      search_pattern, search_pattern, search_pattern, search_pattern,
-                      search_pattern, search_pattern, search_pattern, limit))
+                params.extend([search_pattern] * 11)
+            
+            # 应用高级筛选
+            if filters:
+                if filters.get('root'):
+                    base_sql += " AND root LIKE ?"
+                    params.append(f"%{filters['root']}%")
+                if filters.get('stem'):
+                    base_sql += " AND stem LIKE ?"
+                    params.append(f"%{filters['stem']}%")
+                if filters.get('leaf'):
+                    base_sql += " AND leaf LIKE ?"
+                    params.append(f"%{filters['leaf']}%")
+                if filters.get('flower'):
+                    base_sql += " AND flower_inflorescence LIKE ?"
+                    params.append(f"%{filters['flower']}%")
+                if filters.get('fruit'):
+                    base_sql += " AND fruit LIKE ?"
+                    params.append(f"%{filters['fruit']}%")
+                if filters.get('habitat'):
+                    base_sql += " AND habitat LIKE ?"
+                    params.append(f"%{filters['habitat']}%")
+                if filters.get('medicinal_use'):
+                    base_sql += " AND medicinal_use LIKE ?"
+                    params.append(f"%{filters['medicinal_use']}%")
+            
+            # 添加排序和限制
+            base_sql += " ORDER BY name_chinese LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(base_sql, params)
             
             results = []
             for row in cursor.fetchall():
@@ -368,7 +364,6 @@ class BupleurumDatabase:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM varieties")
             cursor.execute("DELETE FROM bupleurum_species")
-            cursor.execute("DELETE FROM species_fts")
             conn.commit()
     
     def export_to_csv(self) -> str:
@@ -591,19 +586,101 @@ def render_search():
     with col1:
         search_query = st.text_input(
             "🔍 搜索柴胡品种", 
-            placeholder="输入关键词：如'红棕色'、'线形叶'、'圆锥形根'..."
+            placeholder="输入关键词：如'红棕色'、'线形叶'、'圆锥形根'...",
+            key="search_query_main"
         )
+    with col2:
+        search_mode = st.selectbox("搜索模式", ["模糊搜索", "精确匹配"], index=0, key="search_mode")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
+    # 高级筛选
+    with st.expander("🔬 高级筛选（根据性状特征搜索）", expanded=True):
+        st.markdown('<div class="search-filter-group">', unsafe_allow_html=True)
+        
+        st.markdown("##### 🌱 根茎特征")
+        col1, col2 = st.columns(2)
+        with col1:
+            root_filter = st.text_input("根特征", placeholder="如：圆柱形、红棕色、木质化", key="root_filter")
+        with col2:
+            stem_filter = st.text_input("茎特征", placeholder="如：细圆、有纵槽纹、分枝多", key="stem_filter")
+        
+        st.markdown("##### 🍃 叶花特征")
+        col3, col4 = st.columns(2)
+        with col3:
+            leaf_filter = st.text_input("叶特征", placeholder="如：线形、披针形、倒披针形", key="leaf_filter")
+        with col4:
+            flower_filter = st.text_input("花特征", placeholder="如：伞形花序、黄色、复伞形", key="flower_filter")
+        
+        st.markdown("##### 🍎 果实花果期")
+        col5, col6 = st.columns(2)
+        with col5:
+            fruit_filter = st.text_input("果实特征", placeholder="如：椭圆形、卵形、长圆形", key="fruit_filter")
+        with col6:
+            flowering_filter = st.text_input("花果期", placeholder="如：花期7-8月、果期8-9月", key="flowering_filter")
+        
+        st.markdown("##### 🗺️ 生境药用")
+        col7, col8 = st.columns(2)
+        with col7:
+            habitat_filter = st.text_input("产地/生境", placeholder="如：山坡、草原、林缘", key="habitat_filter")
+        with col8:
+            medicinal_filter = st.text_input("药用功效", placeholder="如：解热、消炎、祛风", key="medicinal_filter")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # 筛选按钮
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+        with col_btn1:
+            if st.button("🔍 开始筛选", type="primary", use_container_width=True):
+                st.session_state['search_triggered'] = True
+        with col_btn2:
+            if st.button("🔄 重置筛选", type="secondary", use_container_width=True):
+                st.session_state['search_triggered'] = False
+                st.rerun()
+    
+    # 初始化搜索触发器
+    if 'search_triggered' not in st.session_state:
+        st.session_state['search_triggered'] = False
+    
     # 执行搜索
-    if search_query and search_query.strip() != "":
-        results = db.search_species_fts(search_query)
+    should_search = (search_query and search_query.strip() != "") or \
+                    st.session_state['search_triggered'] or \
+                    any([root_filter, stem_filter, leaf_filter, flower_filter, 
+                         fruit_filter, flowering_filter, habitat_filter, medicinal_filter])
+    
+    if should_search:
+        # 准备筛选条件
+        filters = {}
+        if root_filter:
+            filters['root'] = root_filter
+        if stem_filter:
+            filters['stem'] = stem_filter
+        if leaf_filter:
+            filters['leaf'] = leaf_filter
+        if flower_filter:
+            filters['flower'] = flower_filter
+        if fruit_filter:
+            filters['fruit'] = fruit_filter
+        if flowering_filter:
+            filters['flowering_fruiting'] = flowering_filter
+        if habitat_filter:
+            filters['habitat'] = habitat_filter
+        if medicinal_filter:
+            filters['medicinal_use'] = medicinal_filter
+        
+        # 执行搜索
+        results = db.search_species(search_query if search_query else "", filters)
+        
+        # 重置搜索触发器
+        st.session_state['search_triggered'] = False
+        
+        # 显示搜索结果
         display_search_results(results)
+        
     else:
         # 显示最近添加的品种
-        st.info("💡 试试搜索：北柴胡、红柴胡、竹叶柴胡...")
-        recent_results = db.search_species_fts("", limit=6)
+        st.info("💡 试试搜索：北柴胡、红柴胡、竹叶柴胡... 或使用高级筛选功能查找特定性状的柴胡品种")
+        recent_results = db.search_species("", limit=6)
         if recent_results:
             st.subheader("📚 最近添加的品种")
             display_species_grid(recent_results)
@@ -635,8 +712,10 @@ def display_species_grid(results: List[Dict[str, Any]]):
                 st.markdown(f"""
                 <div class="species-card">
                     <h3>{species['name_chinese']}</h3>
+                    {f"<p><em>{species.get('name_latin', '')}</em></p>" if species.get('name_latin') else ''}
                     <p><strong>🌱 根:</strong> {truncate_text(species.get('root', '暂无'), 30)}</p>
                     <p><strong>🍃 叶:</strong> {truncate_text(species.get('leaf', '暂无'), 30)}</p>
+                    <p><strong>🌸 花:</strong> {truncate_text(species.get('flower_inflorescence', '暂无'), 30)}</p>
                     <div style="margin-top: 0.5rem;">
                         <span class="tag">ID: {species['id']}</span>
                         {f'<span class="tag">变种: {len(species["varieties"])}</span>' if species.get('varieties') else ''}
@@ -651,13 +730,15 @@ def display_species_grid(results: List[Dict[str, Any]]):
 # 列表显示
 def display_species_list(results: List[Dict[str, Any]]):
     for species in results:
-        with st.expander(f"🌿 {species['name_chinese']} ({species['id']})"):
+        with st.expander(f"🌿 {species['name_chinese']} ({species.get('name_latin', '')}) - ID: {species['id']}"):
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**根特征:**", species.get('root', '暂无'))
                 st.write("**茎特征:**", species.get('stem', '暂无'))
                 st.write("**叶特征:**", species.get('leaf', '暂无'))
+                st.write("**花/花序:**", species.get('flower_inflorescence', '暂无'))
             with col2:
+                st.write("**果实:**", species.get('fruit', '暂无'))
                 st.write("**花果期:**", species.get('flowering_fruiting', '暂无'))
                 st.write("**产地:**", species.get('habitat', '暂无'))
                 if species.get('varieties'):
@@ -674,9 +755,11 @@ def display_species_table(results: List[Dict[str, Any]]):
         table_data.append({
             "ID": species['id'],
             "品种名称": species['name_chinese'],
-            "根特征": truncate_text(species.get('root', ''), 30),
-            "叶特征": truncate_text(species.get('leaf', ''), 30),
-            "产地": truncate_text(species.get('habitat', ''), 30),
+            "拉丁学名": species.get('name_latin', ''),
+            "根特征": truncate_text(species.get('root', ''), 20),
+            "叶特征": truncate_text(species.get('leaf', ''), 20),
+            "花特征": truncate_text(species.get('flower_inflorescence', ''), 20),
+            "产地": truncate_text(species.get('habitat', ''), 20),
             "变种数": len(species.get('varieties', []))
         })
     
@@ -737,31 +820,31 @@ def render_species_detail(species_id: int):
     with tabs[1]:
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("根")
+            st.subheader("🌱 根")
             st.write(species.get('root', '暂无信息'))
             
-            st.subheader("茎")
+            st.subheader("🌿 茎")
             st.write(species.get('stem', '暂无信息'))
             
-            st.subheader("叶")
+            st.subheader("🍃 叶")
             st.write(species.get('leaf', '暂无信息'))
         
         with col2:
-            st.subheader("花/花序")
+            st.subheader("🌸 花/花序")
             st.write(species.get('flower_inflorescence', '暂无信息'))
             
-            st.subheader("果实")
+            st.subheader("🍎 果实")
             st.write(species.get('fruit', '暂无信息'))
             
-            st.subheader("花果期")
+            st.subheader("📅 花果期")
             st.write(species.get('flowering_fruiting', '暂无信息'))
     
     with tabs[2]:
-        st.subheader("产地/生境")
+        st.subheader("🗺️ 产地/生境")
         st.write(species.get('habitat', '暂无信息'))
     
     with tabs[3]:
-        st.subheader("药用功效")
+        st.subheader("💊 药用功效")
         st.write(species.get('medicinal_use', '暂无药用信息'))
     
     with tabs[4]:
@@ -888,7 +971,7 @@ def render_data_management():
         st.metric("🌿 变种/变型数", stats['total_varieties'])
         
         # 显示品种列表
-        all_species = db.search_species_fts("", limit=100)
+        all_species = db.search_species("", limit=100)
         if all_species:
             st.subheader("📋 品种列表")
             species_names = [s['name_chinese'] for s in all_species]
@@ -903,25 +986,15 @@ def render_data_management():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 重建索引", use_container_width=True):
+            if st.button("🔄 优化数据库", use_container_width=True):
                 try:
-                    # 重建全文搜索索引
                     with db.connect() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("DELETE FROM species_fts")
-                        cursor.execute("""
-                        INSERT INTO species_fts(rowid, name_chinese, name_latin, root, stem, leaf, 
-                                              flower_inflorescence, fruit, flowering_fruiting, 
-                                              habitat, medicinal_use, notes)
-                        SELECT id, name_chinese, name_latin, root, stem, leaf, 
-                               flower_inflorescence, fruit, flowering_fruiting, 
-                               habitat, medicinal_use, notes
-                        FROM bupleurum_species
-                        """)
+                        cursor.execute("VACUUM")
                         conn.commit()
-                    st.success("✅ 全文搜索索引已重建")
+                    st.success("✅ 数据库优化完成")
                 except Exception as e:
-                    st.error(f"❌ 重建索引失败：{str(e)}")
+                    st.error(f"❌ 优化失败：{str(e)}")
         
         with col2:
             if st.button("🧹 清理缓存", use_container_width=True):
@@ -1035,12 +1108,17 @@ def render_about_page():
         用于查询和管理柴胡属植物的详细信息。
         
         **主要功能：**
-        - 🔍 智能搜索柴胡品种
+        - 🔍 智能搜索柴胡品种（支持高级筛选）
         - 📚 浏览完整的柴胡数据库
         - ➕ 添加和管理新品种信息
         - 📥 批量导入/导出数据
         - 📱 移动端优化，随时随地访问
         - 📊 数据统计和管理
+        
+        **高级搜索功能：**
+        - 根据根、茎、叶、花等性状特征单独筛选
+        - 支持多条件组合查询
+        - 模糊匹配和精确匹配模式
         
         **数据来源：**
         本系统数据基于《柴胡表型库》整理，涵盖36种柴胡及其变种。
@@ -1056,7 +1134,7 @@ def render_about_page():
         
         **后端技术：**
         - SQLite数据库
-        - 全文搜索索引
+        - 多条件查询优化
         - 数据缓存机制
         
         **部署方式：**
@@ -1083,7 +1161,7 @@ def render_about_page():
         st.markdown("""
         支持关键词搜索
         支持高级筛选
-        支持模糊匹配
+        支持性状特征查询
         """)
     
     with col_guide3:
@@ -1105,7 +1183,7 @@ def render_browse_all():
     """, unsafe_allow_html=True)
     
     # 获取所有品种
-    all_species = db.search_species_fts("")
+    all_species = db.search_species("")
     
     if not all_species:
         st.info("📭 数据库为空，请先添加柴胡品种")
