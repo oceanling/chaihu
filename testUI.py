@@ -1,3 +1,4 @@
+# 在 BupleurumDatabase 类中添加 import_from_csv 方法
 import streamlit as st
 import sqlite3
 import re
@@ -5,6 +6,7 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import io
+import csv
 
 # 设置页面配置
 st.set_page_config(
@@ -230,25 +232,28 @@ class BupleurumDatabase:
                                 'description': ''
                             })
                 
-                # 准备物种数据
-                species_data = {
-                    'name_chinese': str(row.get('name_chinese', '')).strip(),
-                    'name_latin': str(row.get('name_latin', '')).strip(),
-                    'root': str(row.get('root', '')).strip(),
-                    'stem': str(row.get('stem', '')).strip(),
-                    'leaf': str(row.get('leaf', '')).strip(),
-                    'flower_inflorescence': str(row.get('flower_inflorescence', '')).strip(),
-                    'fruit': str(row.get('fruit', '')).strip(),
-                    'flowering_fruiting': str(row.get('flowering_fruiting', '')).strip(),
-                    'habitat': str(row.get('habitat', '')).strip(),
-                    'medicinal_use': str(row.get('medicinal_use', '')).strip(),
-                    'notes': str(row.get('notes', '')).strip(),
-                    'varieties': varieties
-                }
+                # 准备物种数据 - 排除id列，因为数据库会自动生成
+                species_data = {}
+                
+                # 定义需要处理的字段
+                fields = [
+                    'name_chinese', 'name_latin', 'root', 'stem', 'leaf', 
+                    'flower_inflorescence', 'fruit', 'flowering_fruiting', 
+                    'habitat', 'medicinal_use', 'notes'
+                ]
+                
+                for field in fields:
+                    if field in row and pd.notna(row[field]):
+                        species_data[field] = str(row[field]).strip()
+                    else:
+                        species_data[field] = ''
                 
                 # 确保中文名不为空
                 if not species_data['name_chinese']:
                     raise ValueError("中文名不能为空")
+                
+                # 添加变种信息
+                species_data['varieties'] = varieties
                 
                 # 添加物种
                 self.add_species(species_data)
@@ -256,7 +261,7 @@ class BupleurumDatabase:
                 
             except Exception as e:
                 results['failed'] += 1
-                species_name = str(row.get('name_chinese', f"行{idx+1}")).strip()
+                species_name = str(row.get('name_chinese', f"行{idx+2}")).strip()  # idx+2 因为从0开始，且CSV有标题行
                 results['errors'].append(f"{species_name}: {str(e)}")
         
         return results
@@ -436,7 +441,8 @@ def render_bulk_import():
         label="📥 下载导入模板",
         data=csv_template,
         file_name="柴胡导入模板.csv",
-        mime="text/csv"
+        mime="text/csv",
+        width='stretch'
     )
     
     st.markdown("---")
@@ -447,12 +453,25 @@ def render_bulk_import():
     
     if uploaded_file is not None:
         try:
-            # 读取CSV文件
-            df = pd.read_csv(uploaded_file)
+            # 尝试以不同编码读取CSV文件
+            try:
+                # 首先尝试utf-8-sig编码（处理BOM）
+                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+            except:
+                # 如果失败，尝试gbk编码
+                uploaded_file.seek(0)  # 重置文件指针
+                df = pd.read_csv(uploaded_file, encoding='gbk')
+            
+            # 清理列名：移除BOM和空白字符
+            df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
             
             # 显示预览
             st.markdown("### 👀 数据预览")
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head(), width='stretch')
+            
+            # 显示实际读取到的列名
+            st.markdown("#### 📝 检测到的列名")
+            st.write(f"列名列表: {list(df.columns)}")
             
             # 检查必要字段
             required_fields = ['name_chinese']
@@ -460,6 +479,7 @@ def render_bulk_import():
             
             if missing_fields:
                 st.error(f"❌ CSV文件缺少必要字段: {', '.join(missing_fields)}")
+                st.info(f"检测到的字段: {', '.join(df.columns)}")
             else:
                 st.success(f"✅ 成功读取文件，共发现 {len(df)} 条记录")
                 
@@ -474,9 +494,11 @@ def render_bulk_import():
                     if 'varieties' in df.columns:
                         variety_count = df['varieties'].dropna().count()
                         st.metric("包含变种", variety_count)
+                    else:
+                        st.metric("包含变种", 0)
                 
                 # 导入确认
-                if st.button("🚀 开始导入数据", type="primary", use_container_width=True):
+                if st.button("🚀 开始导入数据", type="primary", width='stretch'):
                     with st.spinner("正在导入数据..."):
                         result = db.import_from_csv(df)
                     
@@ -505,19 +527,22 @@ def render_bulk_import():
         
         except Exception as e:
             st.error(f"❌ 文件读取失败: {str(e)}")
+            import traceback
+            st.error(f"详细错误信息: {traceback.format_exc()}")
     
     # 数据导出功能
     st.markdown("---")
     st.markdown("### 📤 数据导出")
     
-    if st.button("📥 导出当前数据为CSV", use_container_width=True):
+    if st.button("📥 导出当前数据为CSV", width='stretch'):
         try:
             csv_data = db.export_to_csv()
             st.download_button(
                 label="下载CSV文件",
                 data=csv_data,
                 file_name="柴胡数据库导出.csv",
-                mime="text/csv"
+                mime="text/csv",
+                width='stretch'
             )
             st.success("✅ 数据导出完成，请点击上方按钮下载")
         except Exception as e:
@@ -649,7 +674,7 @@ def display_species_table(results: List[Dict[str, Any]]):
         })
     
     df = pd.DataFrame(table_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
     
     selected_id = st.selectbox(
         "选择ID查看详情", 
@@ -922,7 +947,8 @@ def render_data_management():
                     label="下载CSV文件",
                     data=csv_data,
                     file_name=f"柴胡数据库_导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    width='stretch'
                 )
                 
                 st.success("✅ 数据导出完成，请点击上方按钮下载")
