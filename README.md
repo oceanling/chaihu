@@ -7,7 +7,7 @@
 - **部署平台**: Streamlit Cloud
 - **部署邮箱**: oceanlingyutong@outlook.com
 - **GitHub仓库**: 
-- **访问地址**: {https://chaihuchaxun.streamlit.app/}
+- **访问地址**: https://chaihuchaxun.streamlit.app/
 
 ## 🛠️ 技术栈
 - **前端框架**: Streamlit 1.53.1
