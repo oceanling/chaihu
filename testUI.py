@@ -1,19 +1,17 @@
-# 在 BupleurumDatabase 类中添加 import_from_csv 方法
+# testUI_redesigned.py
 import streamlit as st
 import sqlite3
-import re
 import pandas as pd
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 import io
-import csv
+import re
 
 # 设置页面配置
 st.set_page_config(
-    page_title="柴胡查询系统",
+    page_title="柴胡形态特征数据库",
     page_icon="🌿",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # 自定义CSS样式
@@ -21,12 +19,6 @@ def load_custom_css():
     st.markdown("""
     <style>
     .main { padding: 1rem; }
-    
-    @media (max-width: 768px) {
-        .block-container { padding: 1rem 0.5rem; }
-        .stButton > button { width: 100%; margin: 0.25rem 0; }
-        .stSelectbox, .stTextInput, .stTextArea { width: 100%; }
-    }
     
     .species-card {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
@@ -37,7 +29,7 @@ def load_custom_css():
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     
-    .tag {
+    .feature-tag {
         display: inline-block;
         background: #4CAF50;
         color: white;
@@ -47,12 +39,13 @@ def load_custom_css():
         margin: 0.2rem;
     }
     
-    .search-container {
+    .metric-card {
         background: white;
         padding: 1rem;
         border-radius: 10px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         margin-bottom: 1rem;
+        text-align: center;
     }
     
     .stButton > button {
@@ -69,45 +62,50 @@ def load_custom_css():
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
     
-    .badge {
-        display: inline-block;
-        background: #FF9800;
-        color: white;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.7rem;
-        margin-left: 0.5rem;
-    }
-    
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
     .custom-title {
         background: linear-gradient(45deg, #4CAF50, #2E7D32);
         color: white;
-        padding: 1rem;
+        padding: 1.5rem;
         border-radius: 10px;
         text-align: center;
         margin-bottom: 1.5rem;
     }
     
-    .search-filter-group {
+    .feature-group {
         background: #f8f9fa;
         padding: 1rem;
         border-radius: 8px;
         margin: 0.5rem 0;
         border: 1px solid #e9ecef;
     }
+    
+    .data-table {
+        font-size: 0.9rem;
+    }
+    
+    .data-table th {
+        background-color: #4CAF50;
+        color: white;
+        padding: 0.5rem;
+    }
+    
+    .data-table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
 # 加载CSS
 load_custom_css()
 
-class BupleurumDatabase:
-    """柴胡数据库管理类"""
+class BupleurumMorphologyDB:
+    """柴胡形态特征数据库管理类"""
     
-    def __init__(self, db_path='bupleurum.db'):
+    def __init__(self, db_path='bupleurum_morphology.db'):
         self.db_path = db_path
         self.conn = None
         self.initialize_database()
@@ -116,49 +114,224 @@ class BupleurumDatabase:
         """连接到数据库"""
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
-        # 启用外键约束
-        self.conn.execute("PRAGMA foreign_keys = ON")
         return self.conn
     
     def initialize_database(self):
-        """初始化数据库表"""
+        """初始化数据库表 - 根据Excel结构设计"""
         with self.connect() as conn:
             cursor = conn.cursor()
             
-            # 创建主表
+            # 创建主表 - 对应Excel中的所有列
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS bupleurum_species (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name_chinese TEXT NOT NULL UNIQUE,
-                name_latin TEXT,
-                root TEXT,
-                stem TEXT,
-                leaf TEXT,
-                flower_inflorescence TEXT,
-                fruit TEXT,
-                flowering_fruiting TEXT,
-                habitat TEXT,
-                medicinal_use TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                serial_number INTEGER,
+                species_name TEXT NOT NULL,
+                growth_form TEXT,
+                min_height_cm REAL,
+                max_height_cm REAL,
+                root_color TEXT,
+                leaf_max_length_cm REAL,
+                leaf_min_length_cm REAL,
+                leaf_min_width_mm REAL,
+                leaf_max_width_mm REAL,
+                leaf_shape TEXT,
+                leaf_color TEXT,
+                min_vein_number INTEGER,
+                max_vein_number INTEGER,
+                min_inflorescence_diameter_cm REAL,
+                max_inflorescence_diameter_cm REAL,
+                bract_number TEXT,
+                bract_shape TEXT,
+                min_bract_length_mm REAL,
+                max_bract_length_mm REAL,
+                ray_number TEXT,
+                min_ray_length_cm REAL,
+                max_ray_length_cm REAL,
+                umbellet_diameter_mm TEXT,
+                bracteole_number TEXT,
+                bracteole_shape TEXT,
+                umbellet_number TEXT,
+                petal_color TEXT,
+                fruit_shape TEXT,
+                fruit_color TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             ''')
             
-            # 创建变种表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS varieties (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                species_id INTEGER,
-                name_chinese TEXT NOT NULL,
-                description TEXT,
-                FOREIGN KEY (species_id) REFERENCES bupleurum_species (id) ON DELETE CASCADE
-            )
-            ''')
+            # 创建索引以提高查询性能
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_species_name ON bupleurum_species(species_name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_growth_form ON bupleurum_species(growth_form)')
             
             conn.commit()
     
-    def get_statistics(self) -> Dict[str, int]:
+    def import_from_excel_df(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """从DataFrame导入Excel数据"""
+        results = {
+            'total': len(df),
+            'success': 0,
+            'failed': 0,
+            'errors': [],
+            'duplicates': 0
+        }
+        
+        # 获取已存在的物种名称，用于去重
+        existing_species = self.get_all_species_names()
+        
+        for idx, row in df.iterrows():
+            try:
+                # 跳过表头行
+                if idx == 0:
+                    continue
+                    
+                # 检查必需字段
+                species_name = str(row.get('物种', '')).strip()
+                if not species_name or species_name == 'nan':
+                    results['failed'] += 1
+                    results['errors'].append(f"行{idx+1}: 物种名称为空")
+                    continue
+                
+                # 检查是否已存在
+                if species_name in existing_species:
+                    results['duplicates'] += 1
+                    continue
+                
+                # 准备数据 - 处理所有字段
+                species_data = {
+                    'serial_number': int(row.get('序号', 0)) if pd.notna(row.get('序号')) else 0,
+                    'species_name': species_name,
+                    'growth_form': str(row.get('株型', '')).strip() if pd.notna(row.get('株型')) else '',
+                    'min_height_cm': self._parse_numeric(str(row.get('最小株高(厘米)', ''))),
+                    'max_height_cm': self._parse_numeric(str(row.get('最大株高(厘米)', ''))),
+                    'root_color': str(row.get('根颜色', '')).strip() if pd.notna(row.get('根颜色')) else '',
+                    'leaf_max_length_cm': self._parse_numeric(str(row.get('叶最大长度(厘米)', ''))),
+                    'leaf_min_length_cm': self._parse_numeric(str(row.get('叶最小长度(厘米)', ''))),
+                    'leaf_min_width_mm': self._parse_numeric(str(row.get('叶最小宽度(毫米)', ''))),
+                    'leaf_max_width_mm': self._parse_numeric(str(row.get('叶最大宽度(毫米)', ''))),
+                    'leaf_shape': str(row.get('叶形', '')).strip() if pd.notna(row.get('叶形')) else '',
+                    'leaf_color': str(row.get('叶颜色', '')).strip() if pd.notna(row.get('叶颜色')) else '',
+                    'min_vein_number': self._parse_integer(str(row.get('最小叶脉数', ''))),
+                    'max_vein_number': self._parse_integer(str(row.get('最大叶脉数', ''))),
+                    'min_inflorescence_diameter_cm': self._parse_numeric(str(row.get('最小花序直径(厘米)', ''))),
+                    'max_inflorescence_diameter_cm': self._parse_numeric(str(row.get('最大花序直径(厘米)', ''))),
+                    'bract_number': str(row.get('总苞片数量', '')).strip() if pd.notna(row.get('总苞片数量')) else '',
+                    'bract_shape': str(row.get('总苞片形状', '')).strip() if pd.notna(row.get('总苞片形状')) else '',
+                    'min_bract_length_mm': self._parse_numeric(str(row.get('总苞片最小长度(毫米)', ''))),
+                    'max_bract_length_mm': self._parse_numeric(str(row.get('总苞片最大长度(毫米)', ''))),
+                    'ray_number': str(row.get('伞辐数量', '')).strip() if pd.notna(row.get('伞辐数量')) else '',
+                    'min_ray_length_cm': self._parse_numeric(str(row.get('最小伞辐长度(厘米)', ''))),
+                    'max_ray_length_cm': self._parse_numeric(str(row.get('最大伞辐长度(厘米)', ''))),
+                    'umbellet_diameter_mm': str(row.get('小伞形花序直径(毫米)', '')).strip() if pd.notna(row.get('小伞形花序直径(毫米)')) else '',
+                    'bracteole_number': str(row.get('小总苞片数量', '')).strip() if pd.notna(row.get('小总苞片数量')) else '',
+                    'bracteole_shape': str(row.get('小总苞片形状', '')).strip() if pd.notna(row.get('小总苞片形状')) else '',
+                    'umbellet_number': str(row.get('小伞形花序数量', '')).strip() if pd.notna(row.get('小伞形花序数量')) else '',
+                    'petal_color': str(row.get('花瓣颜色', '')).strip() if pd.notna(row.get('花瓣颜色')) else '',
+                    'fruit_shape': str(row.get('果形状', '')).strip() if pd.notna(row.get('果形状')) else '',
+                    'fruit_color': str(row.get('果颜色', '')).strip() if pd.notna(row.get('果颜色')) else ''
+                }
+                
+                # 插入数据
+                self._add_species(species_data)
+                results['success'] += 1
+                existing_species.add(species_name)
+                
+            except Exception as e:
+                results['failed'] += 1
+                species_name = str(row.get('物种', f"行{idx+1}")).strip()
+                results['errors'].append(f"{species_name}: {str(e)}")
+        
+        return results
+    
+    def _parse_numeric(self, value: str) -> Optional[float]:
+        """解析数值，处理范围、未明确等情况"""
+        if not value or value.lower() in ['未明确', 'nan', '']:
+            return None
+        
+        # 处理范围值如 "3-8"
+        if '-' in value:
+            parts = value.split('-')
+            try:
+                return float(parts[0].strip())
+            except:
+                return None
+        
+        # 处理单个数值
+        try:
+            return float(value.strip())
+        except:
+            return None
+    
+    def _parse_integer(self, value: str) -> Optional[int]:
+        """解析整数值"""
+        num = self._parse_numeric(value)
+        return int(num) if num is not None else None
+    
+    def _add_species(self, species_data: Dict[str, Any]) -> int:
+        """添加物种到数据库"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            
+            columns = list(species_data.keys())
+            placeholders = ['?'] * len(columns)
+            values = list(species_data.values())
+            
+            sql = f"INSERT INTO bupleurum_species ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+            cursor.execute(sql, values)
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_all_species(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取所有物种"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM bupleurum_species ORDER BY species_name LIMIT ?", (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_species_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """根据名称获取物种"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM bupleurum_species WHERE species_name = ?", (name,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def search_species(self, query: str = "", filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """搜索物种"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            
+            sql = "SELECT * FROM bupleurum_species WHERE 1=1"
+            params = []
+            
+            if query:
+                sql += " AND (species_name LIKE ? OR leaf_shape LIKE ? OR fruit_shape LIKE ?)"
+                search_term = f"%{query}%"
+                params.extend([search_term, search_term, search_term])
+            
+            if filters:
+                for key, value in filters.items():
+                    if value:
+                        if key in ['min_height', 'max_height', 'min_vein', 'max_vein']:
+                            # 数值范围筛选
+                            if key == 'min_height':
+                                sql += " AND min_height_cm >= ?"
+                            elif key == 'max_height':
+                                sql += " AND max_height_cm <= ?"
+                            elif key == 'min_vein':
+                                sql += " AND min_vein_number >= ?"
+                            elif key == 'max_vein':
+                                sql += " AND max_vein_number <= ?"
+                            params.append(float(value))
+                        else:
+                            # 文本筛选
+                            sql += f" AND {key} LIKE ?"
+                            params.append(f"%{value}%")
+            
+            sql += " ORDER BY species_name"
+            cursor.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_statistics(self) -> Dict[str, Any]:
         """获取数据库统计信息"""
         with self.connect() as conn:
             cursor = conn.cursor()
@@ -166,382 +339,147 @@ class BupleurumDatabase:
             cursor.execute("SELECT COUNT(*) FROM bupleurum_species")
             total_species = cursor.fetchone()[0]
             
-            cursor.execute("SELECT COUNT(*) FROM varieties")
-            total_varieties = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT growth_form) FROM bupleurum_species")
+            growth_forms = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(DISTINCT leaf_shape) FROM bupleurum_species WHERE leaf_shape != ''")
+            leaf_shapes = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(DISTINCT fruit_shape) FROM bupleurum_species WHERE fruit_shape != ''")
+            fruit_shapes = cursor.fetchone()[0]
             
             return {
                 'total_species': total_species,
-                'total_varieties': total_varieties
+                'growth_forms': growth_forms,
+                'leaf_shapes': leaf_shapes,
+                'fruit_shapes': fruit_shapes
             }
     
-    def add_species(self, species_data: Dict[str, Any]) -> int:
-        """添加柴胡品种"""
+    def get_all_species_names(self) -> set:
+        """获取所有物种名称"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            
-            # 提取变种信息
-            varieties = species_data.pop('varieties', [])
-            
-            # 准备数据
-            columns = list(species_data.keys())
-            placeholders = ['?'] * len(columns)
-            values = list(species_data.values())
-            
-            # 插入主品种
-            sql = f"INSERT OR REPLACE INTO bupleurum_species ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-            cursor.execute(sql, values)
-            species_id = cursor.lastrowid
-            
-            # 如果有变种，先删除旧的变种
-            cursor.execute("DELETE FROM varieties WHERE species_id = ?", (species_id,))
-            
-            # 插入新变种
-            for variety in varieties:
-                if variety.get('name_chinese'):  # 确保变种名称不为空
-                    cursor.execute(
-                        "INSERT INTO varieties (species_id, name_chinese, description) VALUES (?, ?, ?)",
-                        (species_id, variety.get('name_chinese', ''), variety.get('description', ''))
-                    )
-            
-            conn.commit()
-            return species_id
-    
-    def import_from_csv(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """从DataFrame批量导入数据"""
-        results = {
-            'total': len(df),
-            'success': 0,
-            'failed': 0,
-            'errors': []
-        }
-        
-        for idx, row in df.iterrows():
-            try:
-                # 处理变种信息
-                varieties = []
-                if 'varieties' in row and pd.notna(row['varieties']):
-                    var_list = str(row['varieties']).split(';')
-                    for var_name in var_list:
-                        if var_name.strip():
-                            varieties.append({
-                                'name_chinese': var_name.strip(),
-                                'description': ''
-                            })
-                
-                # 准备物种数据 - 排除id列，因为数据库会自动生成
-                species_data = {}
-                
-                # 定义需要处理的字段
-                fields = [
-                    'name_chinese', 'name_latin', 'root', 'stem', 'leaf', 
-                    'flower_inflorescence', 'fruit', 'flowering_fruiting', 
-                    'habitat', 'medicinal_use', 'notes'
-                ]
-                
-                for field in fields:
-                    if field in row and pd.notna(row[field]):
-                        species_data[field] = str(row[field]).strip()
-                    else:
-                        species_data[field] = ''
-                
-                # 确保中文名不为空
-                if not species_data['name_chinese']:
-                    raise ValueError("中文名不能为空")
-                
-                # 添加变种信息
-                species_data['varieties'] = varieties
-                
-                # 添加物种
-                self.add_species(species_data)
-                results['success'] += 1
-                
-            except Exception as e:
-                results['failed'] += 1
-                species_name = str(row.get('name_chinese', f"行{idx+2}")).strip()  # idx+2 因为从0开始，且CSV有标题行
-                results['errors'].append(f"{species_name}: {str(e)}")
-        
-        return results
-    
-    def search_species(self, query: str = "", filters: Dict[str, str] = None, limit: int = 50) -> List[Dict[str, Any]]:
-        """搜索柴胡品种，支持关键词和高级筛选"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            
-            # 构建基础查询
-            base_sql = "SELECT * FROM bupleurum_species WHERE 1=1"
-            params = []
-            
-            # 关键词搜索（在多个字段中搜索）
-            if query and query.strip():
-                base_sql += """
-                AND (name_chinese LIKE ? 
-                     OR name_latin LIKE ? 
-                     OR root LIKE ? 
-                     OR stem LIKE ? 
-                     OR leaf LIKE ? 
-                     OR flower_inflorescence LIKE ? 
-                     OR fruit LIKE ? 
-                     OR flowering_fruiting LIKE ? 
-                     OR habitat LIKE ? 
-                     OR medicinal_use LIKE ? 
-                     OR notes LIKE ?)
-                """
-                search_pattern = f"%{query}%"
-                params.extend([search_pattern] * 11)
-            
-            # 应用高级筛选
-            if filters:
-                if filters.get('root'):
-                    base_sql += " AND root LIKE ?"
-                    params.append(f"%{filters['root']}%")
-                if filters.get('stem'):
-                    base_sql += " AND stem LIKE ?"
-                    params.append(f"%{filters['stem']}%")
-                if filters.get('leaf'):
-                    base_sql += " AND leaf LIKE ?"
-                    params.append(f"%{filters['leaf']}%")
-                if filters.get('flower'):
-                    base_sql += " AND flower_inflorescence LIKE ?"
-                    params.append(f"%{filters['flower']}%")
-                if filters.get('fruit'):
-                    base_sql += " AND fruit LIKE ?"
-                    params.append(f"%{filters['fruit']}%")
-                if filters.get('habitat'):
-                    base_sql += " AND habitat LIKE ?"
-                    params.append(f"%{filters['habitat']}%")
-                if filters.get('medicinal_use'):
-                    base_sql += " AND medicinal_use LIKE ?"
-                    params.append(f"%{filters['medicinal_use']}%")
-            
-            # 添加排序和限制
-            base_sql += " ORDER BY name_chinese LIMIT ?"
-            params.append(limit)
-            
-            cursor.execute(base_sql, params)
-            
-            results = []
-            for row in cursor.fetchall():
-                result = dict(row)
-                result['varieties'] = self.get_varieties(result['id'])
-                results.append(result)
-            
-            return results
-    
-    def get_species_by_id(self, species_id: int) -> Optional[Dict[str, Any]]:
-        """根据ID获取柴胡品种"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            
-            # 获取主品种信息
-            cursor.execute("SELECT * FROM bupleurum_species WHERE id = ?", (species_id,))
-            row = cursor.fetchone()
-            
-            if row:
-                result = dict(row)
-                # 获取变种信息
-                result['varieties'] = self.get_varieties(species_id)
-                return result
-            
-            return None
-    
-    def get_varieties(self, species_id: int) -> List[Dict[str, str]]:
-        """获取品种的变种信息"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name_chinese, description FROM varieties WHERE species_id = ?", (species_id,))
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def get_all_species_names(self) -> List[str]:
-        """获取所有柴胡品种名称"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name_chinese FROM bupleurum_species ORDER BY name_chinese")
-            return [row[0] for row in cursor.fetchall()]
+            cursor.execute("SELECT species_name FROM bupleurum_species")
+            return {row[0] for row in cursor.fetchall()}
     
     def clear_database(self):
         """清空数据库"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM varieties")
             cursor.execute("DELETE FROM bupleurum_species")
             conn.commit()
     
-    def export_to_csv(self) -> str:
-        """导出数据为CSV格式"""
+    def export_to_excel(self) -> pd.DataFrame:
+        """导出数据为DataFrame"""
         with self.connect() as conn:
-            # 获取所有物种数据
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bupleurum_species ORDER BY name_chinese")
-            species_data = [dict(row) for row in cursor.fetchall()]
-            
-            # 为每个物种获取变种
-            for species in species_data:
-                varieties = self.get_varieties(species['id'])
-                if varieties:
-                    species['varieties'] = ';'.join([v['name_chinese'] for v in varieties if v.get('name_chinese')])
-                else:
-                    species['varieties'] = ''
-            
-            # 转换为DataFrame
-            df = pd.DataFrame(species_data)
-            
-            # 删除不需要的列
-            columns_to_drop = ['id', 'created_at', 'updated_at']
-            for col in columns_to_drop:
-                if col in df.columns:
-                    df = df.drop(columns=[col])
-            
-            return df.to_csv(index=False, encoding='utf-8-sig')
+            df = pd.read_sql_query("SELECT * FROM bupleurum_species ORDER BY species_name", conn)
+            return df
 
 # 初始化数据库
 @st.cache_resource
 def get_database():
-    return BupleurumDatabase()
+    return BupleurumMorphologyDB()
 
 db = get_database()
 
-# 应用标题
 def render_header():
+    """渲染页头"""
     st.markdown("""
     <div class="custom-title">
-        <h1 style="margin: 0;">🌿 柴胡查询系统</h1>
-        <p style="margin: 0; opacity: 0.9;">传统草药数据库 | 移动端优化</p>
+        <h1 style="margin: 0;">🌿 柴胡形态特征数据库</h1>
+        <p style="margin: 0; opacity: 0.9;">基于《柴胡词典2.xlsx》的形态特征数据库系统</p>
     </div>
     """, unsafe_allow_html=True)
     
     # 统计信息
     stats = db.get_statistics()
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("🌱 品种总数", stats['total_species'])
+        st.metric("🌱 物种总数", stats['total_species'])
     with col2:
-        st.metric("🌿 变种总数", stats['total_varieties'])
+        st.metric("📏 株型种类", stats['growth_forms'])
     with col3:
-        st.metric("📊 数据库状态", "正常" if stats['total_species'] > 0 else "空")
+        st.metric("🍃 叶形种类", stats['leaf_shapes'])
+    with col4:
+        st.metric("🍎 果形种类", stats['fruit_shapes'])
 
-# 批量导入页面
-def render_bulk_import():
+def render_data_import():
+    """渲染数据导入页面"""
     st.markdown("""
     <div style="background: #f0f7ff; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-        <h2 style="margin: 0; color: #2c3e50;">📥 批量导入数据</h2>
-        <p style="margin: 0; color: #7f8c8d;">从CSV文件批量导入柴胡品种数据</p>
+        <h2 style="margin: 0; color: #2c3e50;">📥 导入Excel数据</h2>
+        <p style="margin: 0; color: #7f8c8d;">导入《柴胡词典2.xlsx》中的形态特征数据</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # CSV文件模板
-    st.markdown("### 📋 CSV文件格式说明")
+    # 显示Excel文件结构
+    st.markdown("### 📋 Excel文件结构说明")
     st.markdown("""
-    请使用以下格式的CSV文件进行导入：
-    - 文件编码：UTF-8
-    - 字段说明：
-      1. **name_chinese** - 中文名（必填）
-      2. **name_latin** - 拉丁学名（可选）
-      3. **root** - 根特征（可选）
-      4. **stem** - 茎特征（可选）
-      5. **leaf** - 叶特征（可选）
-      6. **flower_inflorescence** - 花/花序特征（可选）
-      7. **fruit** - 果实特征（可选）
-      8. **flowering_fruiting** - 花果期（可选）
-      9. **habitat** - 产地/生境（可选）
-      10. **medicinal_use** - 药用功效（可选）
-      11. **notes** - 备注信息（可选）
-      12. **varieties** - 变种信息（多个变种用分号分隔，可选）
+    **字段说明：**
+    1. **序号** - 编号
+    2. **物种** - 物种名称（中文名或拉丁名）
+    3. **株型** - 生长形态
+    4. **最小/最大株高** - 植株高度范围（厘米）
+    5. **根颜色** - 根的颜色
+    6. **叶长度/宽度** - 叶片尺寸
+    7. **叶形** - 叶片形状
+    8. **叶颜色** - 叶片颜色
+    9. **叶脉数** - 叶脉数量范围
+    10. **花序直径** - 花序尺寸
+    11. **总苞片特征** - 数量、形状、尺寸
+    12. **伞辐特征** - 数量、长度
+    13. **小伞形花序特征** - 直径、数量
+    14. **小总苞片特征** - 数量、形状
+    15. **花瓣颜色** - 花色
+    16. **果实特征** - 形状、颜色
     """)
     
-    # 下载模板按钮
-    template_data = {
-        'name_chinese': ['北柴胡', '红柴胡'],
-        'name_latin': ['Bupleurum chinense', 'Bupleurum scorzonerifolium'],
-        'root': ['主根较粗大，棕褐色，质坚硬', '主根发达，圆锥形，深红棕色'],
-        'stem': ['茎单一或数茎，高50-85厘米', '茎单一或2-3，高30-60厘米'],
-        'leaf': ['基生叶倒披针形或狭椭圆形', '叶细线形，基生叶下部略收缩成叶柄'],
-        'flower_inflorescence': ['复伞形花序很多，伞辐3-8', '伞形花序自叶腋间抽出，伞辐4-6'],
-        'fruit': ['果广椭圆形，棕色，长约3毫米', '果广椭圆形，深褐色，长2.5毫米'],
-        'flowering_fruiting': ['花期9月，果期10月', '花期7-8月，果期8-9月'],
-        'habitat': ['我国东北、华北、西北、华东和华中各地', '广布于我国多个省区'],
-        'medicinal_use': ['中药材上称为北柴胡', '根入药，称红柴胡'],
-        'notes': ['分布广泛', '与锥叶柴胡极近似'],
-        'varieties': ['北京柴胡;烟台柴胡;多伞北柴胡', '长伞红柴胡;少花红柴胡']
-    }
-    
-    template_df = pd.DataFrame(template_data)
-    csv_template = template_df.to_csv(index=False, encoding='utf-8-sig')
-    
-    st.download_button(
-        label="📥 下载导入模板",
-        data=csv_template,
-        file_name="柴胡导入模板.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    
-    st.markdown("---")
-    
-    # 文件上传区域
-    st.markdown("### 📤 上传CSV文件")
-    uploaded_file = st.file_uploader("选择CSV文件", type=['csv'])
+    # 文件上传
+    st.markdown("### 📤 上传Excel文件")
+    uploaded_file = st.file_uploader("选择Excel文件", type=['xlsx', 'xls'])
     
     if uploaded_file is not None:
         try:
-            # 尝试以不同编码读取CSV文件
-            try:
-                # 首先尝试utf-8-sig编码（处理BOM）
-                df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
-            except:
-                # 如果失败，尝试gbk编码
-                uploaded_file.seek(0)  # 重置文件指针
-                df = pd.read_csv(uploaded_file, encoding='gbk')
+            # 读取Excel文件
+            df = pd.read_excel(uploaded_file, sheet_name=0)
             
-            # 清理列名：移除BOM和空白字符
-            df.columns = [col.strip().replace('\ufeff', '') for col in df.columns]
-            
-            # 显示预览
+            # 显示数据预览
             st.markdown("### 👀 数据预览")
-            st.dataframe(df.head(), use_container_width=True)
+            st.dataframe(df.head(10), use_container_width=True)
             
-            # 显示实际读取到的列名
-            st.markdown("#### 📝 检测到的列名")
-            st.write(f"列名列表: {list(df.columns)}")
+            # 显示列信息
+            st.markdown(f"#### 📊 数据概览")
+            st.write(f"- 总行数: {len(df)}")
+            st.write(f"- 列数: {len(df.columns)}")
+            st.write(f"- 列名: {list(df.columns)}")
             
-            # 检查必要字段
-            required_fields = ['name_chinese']
+            # 检查必需字段
+            required_fields = ['物种', '株型']
             missing_fields = [field for field in required_fields if field not in df.columns]
             
             if missing_fields:
-                st.error(f"❌ CSV文件缺少必要字段: {', '.join(missing_fields)}")
+                st.error(f"❌ Excel文件缺少必要字段: {', '.join(missing_fields)}")
                 st.info(f"检测到的字段: {', '.join(df.columns)}")
             else:
                 st.success(f"✅ 成功读取文件，共发现 {len(df)} 条记录")
                 
-                # 显示字段统计
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("总记录数", len(df))
-                with col2:
-                    filled_names = df['name_chinese'].dropna().count()
-                    st.metric("有效中文名", filled_names)
-                with col3:
-                    if 'varieties' in df.columns:
-                        variety_count = df['varieties'].dropna().count()
-                        st.metric("包含变种", variety_count)
-                    else:
-                        st.metric("包含变种", 0)
-                
                 # 导入确认
                 if st.button("🚀 开始导入数据", type="primary", use_container_width=True):
                     with st.spinner("正在导入数据..."):
-                        result = db.import_from_csv(df)
+                        result = db.import_from_excel_df(df)
                     
                     # 显示导入结果
                     st.markdown("### 📊 导入结果")
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("总记录数", result['total'])
                     with col2:
                         st.metric("导入成功", result['success'])
                     with col3:
                         st.metric("导入失败", result['failed'])
+                    with col4:
+                        st.metric("重复跳过", result['duplicates'])
                     
                     if result['success'] > 0:
                         st.success(f"✅ 成功导入 {result['success']} 条记录")
@@ -557,431 +495,524 @@ def render_bulk_import():
         
         except Exception as e:
             st.error(f"❌ 文件读取失败: {str(e)}")
-            import traceback
-            st.error(f"详细错误信息: {traceback.format_exc()}")
     
-    # 数据导出功能
+    # 数据导出
     st.markdown("---")
     st.markdown("### 📤 数据导出")
     
-    if st.button("📥 导出当前数据为CSV", use_container_width=True):
+    if st.button("📥 导出当前数据", use_container_width=True):
         try:
-            csv_data = db.export_to_csv()
+            df_export = db.export_to_excel()
+            
+            # 转换为Excel字节流
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name='柴胡形态特征')
+            
             st.download_button(
-                label="下载CSV文件",
-                data=csv_data,
-                file_name="柴胡数据库导出.csv",
-                mime="text/csv",
+                label="下载Excel文件",
+                data=output.getvalue(),
+                file_name="柴胡形态特征数据库.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+            
             st.success("✅ 数据导出完成，请点击上方按钮下载")
         except Exception as e:
             st.error(f"❌ 导出失败: {str(e)}")
 
-# 主搜索界面
-def render_search():
-    st.markdown('<div class="search-container">', unsafe_allow_html=True)
+def render_species_browser():
+    """渲染物种浏览页面"""
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); 
+                color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+        <h2 style="margin: 0;">🔍 物种浏览与搜索</h2>
+        <p style="margin: 0; opacity: 0.9;">浏览和搜索柴胡属植物的形态特征</p>
+    </div>
+    """, unsafe_allow_html=True)
     
+    # 搜索和筛选
     col1, col2 = st.columns([3, 1])
     with col1:
         search_query = st.text_input(
-            "🔍 搜索柴胡品种", 
-            placeholder="输入关键词：如'红棕色'、'线形叶'、'圆锥形根'...",
-            key="search_query_main"
+            "搜索物种", 
+            placeholder="输入物种名称、叶形、果形等关键词...",
+            key="search_query"
         )
     with col2:
-        search_mode = st.selectbox("搜索模式", ["模糊搜索", "精确匹配"], index=0, key="search_mode")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        search_limit = st.selectbox("显示数量", [10, 25, 50, 100], index=1)
     
     # 高级筛选
-    with st.expander("🔬 高级筛选（根据性状特征搜索）", expanded=True):
-        st.markdown('<div class="search-filter-group">', unsafe_allow_html=True)
-        
-        st.markdown("##### 🌱 根茎特征")
-        col1, col2 = st.columns(2)
+    with st.expander("🔬 高级筛选", expanded=False):
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            root_filter = st.text_input("根特征", placeholder="如：圆柱形、红棕色、木质化", key="root_filter")
+            growth_form = st.selectbox(
+                "株型",
+                ["全部"] + sorted([g for g in db.get_all_species() if g['growth_form']])
+            )
         with col2:
-            stem_filter = st.text_input("茎特征", placeholder="如：细圆、有纵槽纹、分枝多", key="stem_filter")
-        
-        st.markdown("##### 🍃 叶花特征")
-        col3, col4 = st.columns(2)
+            leaf_shape_filter = st.text_input("叶形", placeholder="如：线形、披针形")
         with col3:
-            leaf_filter = st.text_input("叶特征", placeholder="如：线形、披针形、倒披针形", key="leaf_filter")
+            fruit_shape_filter = st.text_input("果形", placeholder="如：椭圆形、长圆形")
         with col4:
-            flower_filter = st.text_input("花特征", placeholder="如：伞形花序、黄色、复伞形", key="flower_filter")
+            petal_color_filter = st.text_input("花色", placeholder="如：黄色、紫色")
         
-        st.markdown("##### 🍎 果实花果期")
-        col5, col6 = st.columns(2)
+        col5, col6, col7, col8 = st.columns(4)
         with col5:
-            fruit_filter = st.text_input("果实特征", placeholder="如：椭圆形、卵形、长圆形", key="fruit_filter")
+            min_height = st.number_input("最小株高(cm)", min_value=0.0, value=0.0, step=5.0)
         with col6:
-            flowering_filter = st.text_input("花果期", placeholder="如：花期7-8月、果期8-9月", key="flowering_filter")
-        
-        st.markdown("##### 🗺️ 生境药用")
-        col7, col8 = st.columns(2)
+            max_height = st.number_input("最大株高(cm)", min_value=0.0, value=200.0, step=5.0)
         with col7:
-            habitat_filter = st.text_input("产地/生境", placeholder="如：山坡、草原、林缘", key="habitat_filter")
+            min_vein = st.number_input("最小叶脉数", min_value=0, value=0, step=1)
         with col8:
-            medicinal_filter = st.text_input("药用功效", placeholder="如：解热、消炎、祛风", key="medicinal_filter")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            max_vein = st.number_input("最大叶脉数", min_value=0, value=50, step=1)
         
         # 筛选按钮
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-        with col_btn1:
-            if st.button("🔍 开始筛选", type="primary", use_container_width=True):
-                st.session_state['search_triggered'] = True
-        with col_btn2:
-            if st.button("🔄 重置筛选", type="secondary", use_container_width=True):
-                st.session_state['search_triggered'] = False
-                st.rerun()
-    
-    # 初始化搜索触发器
-    if 'search_triggered' not in st.session_state:
-        st.session_state['search_triggered'] = False
+        if st.button("应用筛选", type="primary", use_container_width=True):
+            st.session_state['filters_applied'] = True
     
     # 执行搜索
-    should_search = (search_query and search_query.strip() != "") or \
-                    st.session_state['search_triggered'] or \
-                    any([root_filter, stem_filter, leaf_filter, flower_filter, 
-                         fruit_filter, flowering_filter, habitat_filter, medicinal_filter])
+    filters = {}
+    if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
+        if growth_form and growth_form != "全部":
+            filters['growth_form'] = growth_form
+        if leaf_shape_filter:
+            filters['leaf_shape'] = leaf_shape_filter
+        if fruit_shape_filter:
+            filters['fruit_shape'] = fruit_shape_filter
+        if petal_color_filter:
+            filters['petal_color'] = petal_color_filter
+        if min_height > 0:
+            filters['min_height'] = min_height
+        if max_height < 200:
+            filters['max_height'] = max_height
+        if min_vein > 0:
+            filters['min_vein'] = min_vein
+        if max_vein < 50:
+            filters['max_vein'] = max_vein
     
-    if should_search:
-        # 准备筛选条件
-        filters = {}
-        if root_filter:
-            filters['root'] = root_filter
-        if stem_filter:
-            filters['stem'] = stem_filter
-        if leaf_filter:
-            filters['leaf'] = leaf_filter
-        if flower_filter:
-            filters['flower'] = flower_filter
-        if fruit_filter:
-            filters['fruit'] = fruit_filter
-        if flowering_filter:
-            filters['flowering_fruiting'] = flowering_filter
-        if habitat_filter:
-            filters['habitat'] = habitat_filter
-        if medicinal_filter:
-            filters['medicinal_use'] = medicinal_filter
-        
-        # 执行搜索
-        results = db.search_species(search_query if search_query else "", filters)
-        
-        # 重置搜索触发器
-        st.session_state['search_triggered'] = False
-        
-        # 显示搜索结果
-        display_search_results(results)
-        
-    else:
-        # 显示最近添加的品种
-        st.info("💡 试试搜索：北柴胡、红柴胡、竹叶柴胡... 或使用高级筛选功能查找特定性状的柴胡品种")
-        recent_results = db.search_species("", limit=6)
-        if recent_results:
-            st.subheader("📚 最近添加的品种")
-            display_species_grid(recent_results)
-
-# 显示搜索结果
-def display_search_results(results: List[Dict[str, Any]]):
+    results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
+    
+    # 显示结果
     if not results:
-        st.warning("🔍 未找到匹配的柴胡品种。")
+        st.warning("🔍 未找到匹配的物种。")
         return
     
-    st.success(f"✅ 找到 {len(results)} 个匹配的品种")
+    st.success(f"✅ 找到 {len(results)} 个物种")
     
-    view_mode = st.radio("显示模式", ["卡片视图", "列表视图", "表格视图"], horizontal=True)
+    # 显示模式选择
+    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True)
     
     if view_mode == "卡片视图":
-        display_species_grid(results)
-    elif view_mode == "列表视图":
-        display_species_list(results)
-    else:
+        display_species_cards(results)
+    elif view_mode == "表格视图":
         display_species_table(results)
+    else:
+        display_species_summary(results)
 
-# 卡片网格显示
-def display_species_grid(results: List[Dict[str, Any]]):
+def display_species_cards(species_list: List[Dict[str, Any]]):
+    """以卡片形式显示物种"""
     cols = st.columns(2)
     
-    for idx, species in enumerate(results):
+    for idx, species in enumerate(species_list):
         with cols[idx % len(cols)]:
             with st.container():
+                # 计算株高范围
+                height_range = ""
+                if species.get('min_height_cm') and species.get('max_height_cm'):
+                    height_range = f"{species['min_height_cm']}-{species['max_height_cm']} cm"
+                elif species.get('min_height_cm'):
+                    height_range = f"≥{species['min_height_cm']} cm"
+                elif species.get('max_height_cm'):
+                    height_range = f"≤{species['max_height_cm']} cm"
+                
                 st.markdown(f"""
                 <div class="species-card">
-                    <h3>{species['name_chinese']}</h3>
-                    {f"<p><em>{species.get('name_latin', '')}</em></p>" if species.get('name_latin') else ''}
-                    <p><strong>🌱 根:</strong> {truncate_text(species.get('root', '暂无'), 30)}</p>
-                    <p><strong>🍃 叶:</strong> {truncate_text(species.get('leaf', '暂无'), 30)}</p>
-                    <p><strong>🌸 花:</strong> {truncate_text(species.get('flower_inflorescence', '暂无'), 30)}</p>
+                    <h3>{species['species_name']}</h3>
+                    <p><strong>📏 株型:</strong> {species.get('growth_form', '未明确')}</p>
+                    <p><strong>📐 株高:</strong> {height_range if height_range else '未明确'}</p>
+                    <p><strong>🍃 叶形:</strong> {truncate_text(species.get('leaf_shape', '未明确'), 20)}</p>
+                    <p><strong>🌸 花色:</strong> {species.get('petal_color', '未明确')}</p>
+                    <p><strong>🍎 果形:</strong> {species.get('fruit_shape', '未明确')}</p>
                     <div style="margin-top: 0.5rem;">
-                        <span class="tag">ID: {species['id']}</span>
-                        {f'<span class="tag">变种: {len(species["varieties"])}</span>' if species.get('varieties') else ''}
+                        <span class="feature-tag">ID: {species['id']}</span>
+                        {f'<span class="feature-tag">叶脉: {species.get("min_vein_number", "")}-{species.get("max_vein_number", "")}</span>' if species.get('min_vein_number') or species.get('max_vein_number') else ''}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("📖 查看详情", key=f"view_{species['id']}", use_container_width=True):
+                if st.button("查看详情", key=f"view_{species['id']}", use_container_width=True):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
-# 列表显示
-def display_species_list(results: List[Dict[str, Any]]):
-    for species in results:
-        with st.expander(f"🌿 {species['name_chinese']} ({species.get('name_latin', '')}) - ID: {species['id']}"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**根特征:**", species.get('root', '暂无'))
-                st.write("**茎特征:**", species.get('stem', '暂无'))
-                st.write("**叶特征:**", species.get('leaf', '暂无'))
-                st.write("**花/花序:**", species.get('flower_inflorescence', '暂无'))
-            with col2:
-                st.write("**果实:**", species.get('fruit', '暂无'))
-                st.write("**花果期:**", species.get('flowering_fruiting', '暂无'))
-                st.write("**产地:**", species.get('habitat', '暂无'))
-                if species.get('varieties'):
-                    st.write("**变种:**", ", ".join([v['name_chinese'] for v in species['varieties']]))
-            
-            if st.button("查看完整信息", key=f"full_{species['id']}", use_container_width=True):
-                st.session_state['selected_species'] = species['id']
-                st.rerun()
-
-# 表格显示
-def display_species_table(results: List[Dict[str, Any]]):
+def display_species_table(species_list: List[Dict[str, Any]]):
+    """以表格形式显示物种"""
+    # 准备表格数据
     table_data = []
-    for species in results:
+    for species in species_list:
         table_data.append({
             "ID": species['id'],
-            "品种名称": species['name_chinese'],
-            "拉丁学名": species.get('name_latin', ''),
-            "根特征": truncate_text(species.get('root', ''), 20),
-            "叶特征": truncate_text(species.get('leaf', ''), 20),
-            "花特征": truncate_text(species.get('flower_inflorescence', ''), 20),
-            "产地": truncate_text(species.get('habitat', ''), 20),
-            "变种数": len(species.get('varieties', []))
+            "物种名称": species['species_name'],
+            "株型": species.get('growth_form', ''),
+            "株高范围(cm)": f"{species.get('min_height_cm', '')}-{species.get('max_height_cm', '')}",
+            "叶形": species.get('leaf_shape', ''),
+            "花色": species.get('petal_color', ''),
+            "果形": species.get('fruit_shape', ''),
+            "叶脉数": f"{species.get('min_vein_number', '')}-{species.get('max_vein_number', '')}"
         })
     
     df = pd.DataFrame(table_data)
     st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    selected_id = st.selectbox(
-        "选择ID查看详情", 
-        [""] + [str(species['id']) for species in results],
-        format_func=lambda x: f"ID: {x}" if x else "请选择..."
-    )
-    
-    if selected_id:
-        if st.button("查看选中品种", use_container_width=True):
-            st.session_state['selected_species'] = int(selected_id)
-            st.rerun()
 
-# 品种详情页面
+def display_species_summary(species_list: List[Dict[str, Any]]):
+    """以摘要形式显示物种"""
+    for species in species_list:
+        with st.expander(f"🌿 {species['species_name']} - {species.get('growth_form', '')}"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📏 植株特征")
+                st.write(f"**株高:** {species.get('min_height_cm', '')}-{species.get('max_height_cm', '')} cm")
+                st.write(f"**根颜色:** {species.get('root_color', '未明确')}")
+                
+                st.markdown("#### 🍃 叶片特征")
+                st.write(f"**叶形:** {species.get('leaf_shape', '未明确')}")
+                st.write(f"**叶尺寸:** {species.get('leaf_min_length_cm', '')}-{species.get('leaf_max_length_cm', '')} cm × {species.get('leaf_min_width_mm', '')}-{species.get('leaf_max_width_mm', '')} mm")
+                st.write(f"**叶颜色:** {species.get('leaf_color', '未明确')}")
+                st.write(f"**叶脉数:** {species.get('min_vein_number', '')}-{species.get('max_vein_number', '')}")
+            
+            with col2:
+                st.markdown("#### 🌸 花序特征")
+                st.write(f"**花序直径:** {species.get('min_inflorescence_diameter_cm', '')}-{species.get('max_inflorescence_diameter_cm', '')} cm")
+                st.write(f"**总苞片:** {species.get('bract_number', '')}个, {species.get('bract_shape', '')}, {species.get('min_bract_length_mm', '')}-{species.get('max_bract_length_mm', '')} mm")
+                st.write(f"**伞辐:** {species.get('ray_number', '')}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
+                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_mm', '')} mm, {species.get('umbellet_number', '')}个")
+                
+                st.markdown("#### 🍎 果实特征")
+                st.write(f"**果形:** {species.get('fruit_shape', '未明确')}")
+                st.write(f"**果颜色:** {species.get('fruit_color', '未明确')}")
+
 def render_species_detail(species_id: int):
-    with st.spinner("加载中..."):
-        species = db.get_species_by_id(species_id)
+    """渲染物种详情页面"""
+    # 获取物种数据
+    all_species = db.get_all_species()
+    species = next((s for s in all_species if s['id'] == species_id), None)
     
     if not species:
-        st.error("未找到指定的柴胡品种")
+        st.error("未找到指定的物种")
         return
     
     # 返回按钮
-    if st.button("← 返回搜索结果", use_container_width=True):
+    if st.button("← 返回", use_container_width=True):
         if 'selected_species' in st.session_state:
             del st.session_state['selected_species']
         st.rerun()
     
-    # 详情卡片
+    # 物种详情卡片
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 color: white; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-        <h1 style="margin: 0;">{species['name_chinese']}</h1>
-        <p style="margin: 0; opacity: 0.9;">{species.get('name_latin', '')}</p>
-        <div style="margin-top: 0.5rem;">
-            <span class="badge">ID: {species['id']}</span>
-            <span class="badge">📅 {species.get('created_at', '').split()[0] if species.get('created_at') else '未知'}</span>
-        </div>
+        <h1 style="margin: 0;">{species['species_name']}</h1>
+        <p style="margin: 0; opacity: 0.9;">ID: {species['id']} | 序号: {species.get('serial_number', 'N/A')}</p>
     </div>
     """, unsafe_allow_html=True)
     
-    tabs = st.tabs(["📋 基本信息", "🌱 形态特征", "📍 生境分布", "💊 药用价值", "🌿 变种信息"])
+    # 创建标签页
+    tabs = st.tabs(["📋 基本信息", "🌱 植株特征", "🍃 叶片特征", "🌸 花序特征", "🍎 果实特征", "📊 完整数据"])
     
     with tabs[0]:
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("创建时间", species.get('created_at', '未知').split()[0])
+            st.metric("株型", species.get('growth_form', '未明确'))
         with col2:
-            st.metric("更新时间", species.get('updated_at', '未知').split()[0])
-        
-        if species.get('notes'):
-            st.info("📝 备注: " + species['notes'])
+            height_range = f"{species.get('min_height_cm', '')}-{species.get('max_height_cm', '')} cm"
+            st.metric("株高范围", height_range if height_range != '-' else '未明确')
+        with col3:
+            st.metric("根颜色", species.get('root_color', '未明确'))
     
     with tabs[1]:
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("🌱 根")
-            st.write(species.get('root', '暂无信息'))
-            
-            st.subheader("🌿 茎")
-            st.write(species.get('stem', '暂无信息'))
-            
-            st.subheader("🍃 叶")
-            st.write(species.get('leaf', '暂无信息'))
+            st.markdown("##### 📏 植株尺寸")
+            st.write(f"**最小株高:** {species.get('min_height_cm', '未明确')} cm")
+            st.write(f"**最大株高:** {species.get('max_height_cm', '未明确')} cm")
+            st.write(f"**根颜色:** {species.get('root_color', '未明确')}")
         
         with col2:
-            st.subheader("🌸 花/花序")
-            st.write(species.get('flower_inflorescence', '暂无信息'))
-            
-            st.subheader("🍎 果实")
-            st.write(species.get('fruit', '暂无信息'))
-            
-            st.subheader("📅 花果期")
-            st.write(species.get('flowering_fruiting', '暂无信息'))
+            st.markdown("##### 🏷️ 其他特征")
+            # 这里可以添加更多植株特征
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[2]:
-        st.subheader("🗺️ 产地/生境")
-        st.write(species.get('habitat', '暂无信息'))
-    
-    with tabs[3]:
-        st.subheader("💊 药用功效")
-        st.write(species.get('medicinal_use', '暂无药用信息'))
-    
-    with tabs[4]:
-        if species.get('varieties'):
-            st.success(f"🌿 共有 {len(species['varieties'])} 个变种/变型")
-            for variety in species['varieties']:
-                with st.expander(f"📌 {variety['name_chinese']}"):
-                    st.write(variety.get('description', '暂无描述'))
-        else:
-            st.info("ℹ️ 该品种暂无变种信息")
-
-# 添加新品种页面
-def render_add_species():
-    st.markdown("""
-    <div style="background: #f0f7ff; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-        <h2 style="margin: 0; color: #2c3e50;">➕ 添加新品种</h2>
-        <p style="margin: 0; color: #7f8c8d;">为柴胡数据库添加新的品种信息</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 初始化变种计数
-    if 'variety_count' not in st.session_state:
-        st.session_state.variety_count = 1
-    
-    with st.form("add_species_form", clear_on_submit=True):
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
-        
         with col1:
-            name_chinese = st.text_input("中文名*", placeholder="如：北柴胡")
-            name_latin = st.text_input("拉丁学名", placeholder="如：Bupleurum chinense")
-            root = st.text_area("根特征", placeholder="描述根的形态、颜色、质地等")
-            stem = st.text_area("茎特征", placeholder="描述茎的高度、形状、颜色等")
-            leaf = st.text_area("叶特征", placeholder="描述叶的形状、大小、叶脉等")
+            st.markdown("##### 📐 叶片尺寸")
+            st.write(f"**最小长度:** {species.get('leaf_min_length_cm', '未明确')} cm")
+            st.write(f"**最大长度:** {species.get('leaf_max_length_cm', '未明确')} cm")
+            st.write(f"**最小宽度:** {species.get('leaf_min_width_mm', '未明确')} mm")
+            st.write(f"**最大宽度:** {species.get('leaf_max_width_mm', '未明确')} mm")
         
         with col2:
-            flower = st.text_area("花/花序", placeholder="描述花序类型、花颜色等")
-            fruit = st.text_area("果实", placeholder="描述果实形状、大小、颜色等")
-            flowering_fruiting = st.text_input("花果期", placeholder="如：花期7-8月，果期8-9月")
-            habitat = st.text_area("产地/生境", placeholder="描述分布区域和生长环境")
-            medicinal_use = st.text_area("药用功效", placeholder="描述药用价值和功效")
-        
-        notes = st.text_area("备注信息", placeholder="其他需要说明的信息")
-        
-        # 变种信息
-        st.subheader("🌱 变种/变型信息")
-        
-        varieties = []
-        for i in range(st.session_state.variety_count):
-            col_v1, col_v2 = st.columns([2, 3])
-            with col_v1:
-                var_name = st.text_input(f"变种名称 {i+1}", key=f"var_name_{i}", placeholder="如：北京柴胡")
-            with col_v2:
-                var_desc = st.text_input(f"变种描述 {i+1}", key=f"var_desc_{i}", placeholder="描述变种特征")
-            
-            if var_name:
-                varieties.append({'name_chinese': var_name, 'description': var_desc})
-        
-        submitted = st.form_submit_button("✅ 提交新品种", use_container_width=True)
-        
-        if submitted:
-            if not name_chinese:
-                st.error("❌ 中文名是必填项！")
-                return
-            
-            species_data = {
-                'name_chinese': name_chinese,
-                'name_latin': name_latin,
-                'root': root,
-                'stem': stem,
-                'leaf': leaf,
-                'flower_inflorescence': flower,
-                'fruit': fruit,
-                'flowering_fruiting': flowering_fruiting,
-                'habitat': habitat,
-                'medicinal_use': medicinal_use,
-                'notes': notes,
-                'varieties': varieties
-            }
-            
-            try:
-                species_id = db.add_species(species_data)
-                st.success(f"✅ 成功添加新品种：{name_chinese} (ID: {species_id})")
-                
-                # 重置变种计数
-                st.session_state.variety_count = 1
-                
-                # 显示预览
-                with st.expander("📋 预览添加的数据", expanded=True):
-                    st.json(species_data)
-                
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"❌ 添加失败：{str(e)}")
+            st.markdown("##### 🎨 叶片特征")
+            st.write(f"**叶形:** {species.get('leaf_shape', '未明确')}")
+            st.write(f"**叶颜色:** {species.get('leaf_color', '未明确')}")
+            st.write(f"**最小叶脉数:** {species.get('min_vein_number', '未明确')}")
+            st.write(f"**最大叶脉数:** {species.get('max_vein_number', '未明确')}")
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    # 变种管理按钮（在表单外）
-    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-    with col_btn1:
-        if st.button("➕ 添加变种", use_container_width=True):
-            st.session_state.variety_count += 1
-            st.rerun()
+    with tabs[3]:
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("##### 🌸 花序特征")
+            st.write(f"**最小花序直径:** {species.get('min_inflorescence_diameter_cm', '未明确')} cm")
+            st.write(f"**最大花序直径:** {species.get('max_inflorescence_diameter_cm', '未明确')} cm")
+            st.write(f"**花瓣颜色:** {species.get('petal_color', '未明确')}")
+        
+        with col2:
+            st.markdown("##### 🍃 总苞片")
+            st.write(f"**数量:** {species.get('bract_number', '未明确')}")
+            st.write(f"**形状:** {species.get('bract_shape', '未明确')}")
+            st.write(f"**最小长度:** {species.get('min_bract_length_mm', '未明确')} mm")
+            st.write(f"**最大长度:** {species.get('max_bract_length_mm', '未明确')} mm")
+        
+        with col3:
+            st.markdown("##### ☂️ 伞辐特征")
+            st.write(f"**数量:** {species.get('ray_number', '未明确')}")
+            st.write(f"**最小长度:** {species.get('min_ray_length_cm', '未明确')} cm")
+            st.write(f"**最大长度:** {species.get('max_ray_length_cm', '未明确')} cm")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
+        col4, col5 = st.columns(2)
+        with col4:
+            st.markdown("##### 🌼 小伞形花序")
+            st.write(f"**直径:** {species.get('umbellet_diameter_mm', '未明确')} mm")
+            st.write(f"**数量:** {species.get('umbellet_number', '未明确')}")
+        
+        with col5:
+            st.markdown("##### 🍂 小总苞片")
+            st.write(f"**数量:** {species.get('bracteole_number', '未明确')}")
+            st.write(f"**形状:** {species.get('bracteole_shape', '未明确')}")
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    with col_btn2:
-        if st.button("➖ 减少变种", use_container_width=True):
-            if st.session_state.variety_count > 1:
-                st.session_state.variety_count -= 1
-            st.rerun()
+    with tabs[4]:
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("##### 🍎 果实形状")
+            st.write(f"**果形:** {species.get('fruit_shape', '未明确')}")
+        with col2:
+            st.markdown("##### 🎨 果实颜色")
+            st.write(f"**果颜色:** {species.get('fruit_color', '未明确')}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with tabs[5]:
+        # 显示完整数据
+        st.markdown("### 📊 完整数据记录")
+        
+        # 创建数据表
+        data_items = [
+            ("ID", species['id']),
+            ("序号", species.get('serial_number', '')),
+            ("物种名称", species['species_name']),
+            ("株型", species.get('growth_form', '')),
+            ("最小株高(cm)", species.get('min_height_cm', '')),
+            ("最大株高(cm)", species.get('max_height_cm', '')),
+            ("根颜色", species.get('root_color', '')),
+            ("叶最大长度(cm)", species.get('leaf_max_length_cm', '')),
+            ("叶最小长度(cm)", species.get('leaf_min_length_cm', '')),
+            ("叶最小宽度(mm)", species.get('leaf_min_width_mm', '')),
+            ("叶最大宽度(mm)", species.get('leaf_max_width_mm', '')),
+            ("叶形", species.get('leaf_shape', '')),
+            ("叶颜色", species.get('leaf_color', '')),
+            ("最小叶脉数", species.get('min_vein_number', '')),
+            ("最大叶脉数", species.get('max_vein_number', '')),
+            ("最小花序直径(cm)", species.get('min_inflorescence_diameter_cm', '')),
+            ("最大花序直径(cm)", species.get('max_inflorescence_diameter_cm', '')),
+            ("总苞片数量", species.get('bract_number', '')),
+            ("总苞片形状", species.get('bract_shape', '')),
+            ("总苞片最小长度(mm)", species.get('min_bract_length_mm', '')),
+            ("总苞片最大长度(mm)", species.get('max_bract_length_mm', '')),
+            ("伞辐数量", species.get('ray_number', '')),
+            ("最小伞辐长度(cm)", species.get('min_ray_length_cm', '')),
+            ("最大伞辐长度(cm)", species.get('max_ray_length_cm', '')),
+            ("小伞形花序直径(mm)", species.get('umbellet_diameter_mm', '')),
+            ("小总苞片数量", species.get('bracteole_number', '')),
+            ("小总苞片形状", species.get('bracteole_shape', '')),
+            ("小伞形花序数量", species.get('umbellet_number', '')),
+            ("花瓣颜色", species.get('petal_color', '')),
+            ("果形状", species.get('fruit_shape', '')),
+            ("果颜色", species.get('fruit_color', '')),
+            ("创建时间", species.get('created_at', ''))
+        ]
+        
+        # 显示数据表格
+        html_table = """
+        <table class="data-table" style="width:100%">
+            <tr>
+                <th style="width:30%">字段</th>
+                <th style="width:70%">值</th>
+            </tr>
+        """
+        
+        for field, value in data_items:
+            if value not in [None, '', 'nan', '未明确']:
+                html_table += f"""
+                <tr>
+                    <td><strong>{field}</strong></td>
+                    <td>{value}</td>
+                </tr>
+                """
+        
+        html_table += "</table>"
+        st.markdown(html_table, unsafe_allow_html=True)
 
-# 数据管理页面
-def render_data_management():
+def render_data_analysis():
+    """渲染数据分析页面"""
     st.markdown("""
-    <div style="background: #fff3e0; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-        <h2 style="margin: 0; color: #e65100;">🗃️ 数据管理</h2>
-        <p style="margin: 0; color: #f57c00;">管理柴胡数据库</p>
+    <div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); 
+                color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+        <h2 style="margin: 0;">📊 数据分析</h2>
+        <p style="margin: 0; opacity: 0.9;">柴胡形态特征统计分析</p>
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 数据统计", "📥 批量导入", "🔄 数据库维护", "📤 数据导出"])
+    # 获取所有数据
+    all_species = db.get_all_species()
+    
+    if not all_species:
+        st.info("📭 数据库为空，请先导入数据")
+        return
+    
+    # 基本统计
+    st.markdown("### 📈 基本统计")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        # 株高统计
+        heights = []
+        for species in all_species:
+            if species.get('max_height_cm'):
+                heights.append(species['max_height_cm'])
+        
+        if heights:
+            avg_height = sum(heights) / len(heights)
+            st.metric("平均最大株高", f"{avg_height:.1f} cm")
+    
+    with col2:
+        # 叶脉数统计
+        vein_counts = []
+        for species in all_species:
+            if species.get('max_vein_number'):
+                vein_counts.append(species['max_vein_number'])
+        
+        if vein_counts:
+            avg_veins = sum(vein_counts) / len(vein_counts)
+            st.metric("平均最大叶脉数", f"{avg_veins:.1f}")
+    
+    with col3:
+        # 株型分布
+        growth_forms = {}
+        for species in all_species:
+            form = species.get('growth_form', '未明确')
+            growth_forms[form] = growth_forms.get(form, 0) + 1
+        
+        common_form = max(growth_forms.items(), key=lambda x: x[1])[0] if growth_forms else "无"
+        st.metric("最常见株型", common_form)
+    
+    with col4:
+        # 花色分布
+        colors = {}
+        for species in all_species:
+            color = species.get('petal_color', '未明确')
+            colors[color] = colors.get(color, 0) + 1
+        
+        common_color = max(colors.items(), key=lambda x: x[1])[0] if colors else "无"
+        st.metric("最常见花色", common_color)
+    
+    # 特征分布分析
+    st.markdown("### 📊 特征分布")
+    
+    tab1, tab2, tab3 = st.tabs(["株型分布", "叶形分布", "果形分布"])
+    
+    with tab1:
+        # 株型分布
+        growth_form_counts = {}
+        for species in all_species:
+            form = species.get('growth_form', '未明确')
+            growth_form_counts[form] = growth_form_counts.get(form, 0) + 1
+        
+        if growth_form_counts:
+            df_growth = pd.DataFrame({
+                '株型': list(growth_form_counts.keys()),
+                '数量': list(growth_form_counts.values())
+            }).sort_values('数量', ascending=False)
+            
+            st.bar_chart(df_growth.set_index('株型'))
+    
+    with tab2:
+        # 叶形分布
+        leaf_shape_counts = {}
+        for species in all_species:
+            shape = species.get('leaf_shape', '未明确')
+            if shape and shape != '未明确':
+                # 处理多个叶形的情况
+                shapes = [s.strip() for s in shape.split('、') if s.strip()]
+                for s in shapes:
+                    leaf_shape_counts[s] = leaf_shape_counts.get(s, 0) + 1
+        
+        if leaf_shape_counts:
+            df_leaf = pd.DataFrame({
+                '叶形': list(leaf_shape_counts.keys()),
+                '数量': list(leaf_shape_counts.values())
+            }).sort_values('数量', ascending=False).head(10)
+            
+            st.bar_chart(df_leaf.set_index('叶形'))
+    
+    with tab3:
+        # 果形分布
+        fruit_shape_counts = {}
+        for species in all_species:
+            shape = species.get('fruit_shape', '未明确')
+            fruit_shape_counts[shape] = fruit_shape_counts.get(shape, 0) + 1
+        
+        if fruit_shape_counts:
+            df_fruit = pd.DataFrame({
+                '果形': list(fruit_shape_counts.keys()),
+                '数量': list(fruit_shape_counts.values())
+            }).sort_values('数量', ascending=False)
+            
+            st.bar_chart(df_fruit.set_index('果形'))
+
+def render_management():
+    """渲染管理页面"""
+    st.markdown("""
+    <div style="background: #fff3e0; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+        <h2 style="margin: 0; color: #e65100;">⚙️ 系统管理</h2>
+        <p style="margin: 0; color: #f57c00;">数据库维护与管理</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs(["数据库状态", "数据维护", "系统设置"])
     
     with tab1:
         stats = db.get_statistics()
         
-        st.metric("🌱 柴胡品种数", stats['total_species'])
-        st.metric("🌿 变种/变型数", stats['total_varieties'])
+        st.metric("🌱 物种总数", stats['total_species'])
+        st.metric("📊 数据库状态", "正常" if stats['total_species'] > 0 else "空")
         
-        # 显示品种列表
-        all_species = db.search_species("", limit=100)
+        # 显示所有物种名称
+        all_species = db.get_all_species()
         if all_species:
-            st.subheader("📋 品种列表")
-            species_names = [s['name_chinese'] for s in all_species]
+            st.markdown("### 📋 物种列表")
+            species_names = [f"{s['id']}. {s['species_name']}" for s in all_species]
             st.write(", ".join(species_names))
     
     with tab2:
-        render_bulk_import()
-    
-    with tab3:
-        st.warning("⚠️ 谨慎操作！以下操作可能会影响数据安全")
+        st.warning("⚠️ 谨慎操作以下功能！")
         
         col1, col2 = st.columns(2)
         
@@ -997,15 +1028,15 @@ def render_data_management():
                     st.error(f"❌ 优化失败：{str(e)}")
         
         with col2:
-            if st.button("🧹 清理缓存", use_container_width=True):
+            if st.button("🗑️ 清空缓存", use_container_width=True):
                 st.cache_resource.clear()
                 st.success("✅ 缓存已清理")
         
-        # 危险区域
-        with st.expander("🚨 危险区域", expanded=False):
+        # 危险操作
+        with st.expander("🚨 危险操作", expanded=False):
             st.error("以下操作不可逆！")
             
-            if st.button("🗑️ 清空数据库", type="secondary", use_container_width=True):
+            if st.button("清空数据库", type="secondary", use_container_width=True):
                 st.warning("这将删除所有数据！")
                 confirm = st.checkbox("我确认要清空数据库")
                 
@@ -1015,87 +1046,132 @@ def render_data_management():
                         st.success("✅ 数据库已清空")
                         st.rerun()
     
-    with tab4:
-        st.markdown("### 📤 导出数据")
-        st.info("将当前数据库中的所有数据导出为CSV文件")
+    with tab3:
+        st.markdown("### ⚙️ 系统设置")
         
-        if st.button("📥 导出数据为CSV", use_container_width=True):
+        # 显示版本信息
+        st.write("**系统版本:** 柴胡形态特征数据库 v2.0")
+        st.write("**数据库路径:** bupleurum_morphology.db")
+        st.write("**数据来源:** 柴胡词典2.xlsx")
+        
+        # 导出功能
+        st.markdown("### 📤 数据导出")
+        
+        if st.button("导出完整数据", use_container_width=True):
             try:
-                csv_data = db.export_to_csv()
+                df_export = db.export_to_excel()
+                
+                # 显示数据预览
+                st.dataframe(df_export.head(), use_container_width=True)
+                
+                # 转换为CSV
+                csv_data = df_export.to_csv(index=False, encoding='utf-8-sig')
                 
                 st.download_button(
                     label="下载CSV文件",
                     data=csv_data,
-                    file_name=f"柴胡数据库_导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name="柴胡形态特征数据库.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
                 
-                st.success("✅ 数据导出完成，请点击上方按钮下载")
+                st.success("✅ 数据导出完成")
             except Exception as e:
                 st.error(f"❌ 导出失败: {str(e)}")
 
-# 辅助函数
 def truncate_text(text: str, max_length: int) -> str:
     """截断文本并添加省略号"""
     if not text:
-        return "暂无"
+        return "未明确"
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
 
-# 主应用
 def main():
+    """主应用"""
     # 侧边栏导航
     with st.sidebar:
         st.title("🌿 导航菜单")
         
-        page = st.radio(
-            "选择功能",
-            ["🔍 品种搜索", "📚 浏览全部", "➕ 添加品种", "📥 批量导入", "🗃️ 数据管理", "ℹ️ 关于系统"],
-            index=0
-        )
+        page_options = [
+            "🏠 首页概览",
+            "🔍 物种浏览",
+            "📥 数据导入", 
+            "📊 数据分析",
+            "⚙️ 系统管理",
+            "ℹ️ 关于系统"
+        ]
+        
+        page = st.radio("选择页面", page_options, index=0)
         
         st.markdown("---")
-        st.markdown("### 📊 快速统计")
+        
+        # 快速统计
         stats = db.get_statistics()
-        st.write(f"🌱 品种数: **{stats['total_species']}**")
-        st.write(f"🌿 变种数: **{stats['total_varieties']}**")
+        st.markdown("### 📊 快速统计")
+        st.write(f"🌱 物种数: **{stats['total_species']}**")
+        st.write(f"📏 株型种类: **{stats['growth_forms']}**")
+        st.write(f"🍃 叶形种类: **{stats['leaf_shapes']}**")
         
         st.markdown("---")
+        
         if st.button("🔄 刷新页面", use_container_width=True):
             st.rerun()
     
     # 根据选择显示页面
-    if page == "🔍 品种搜索":
-        render_header()
-        render_search()
-    elif page == "📚 浏览全部":
-        render_header()
-        render_browse_all()
-    elif page == "➕ 添加品种":
-        render_header()
-        render_add_species()
-    elif page == "📥 批量导入":
-        render_header()
-        render_bulk_import()
-    elif page == "🗃️ 数据管理":
-        render_header()
-        render_data_management()
+    render_header()
+    
+    if page == "🏠 首页概览":
+        # 显示欢迎信息和快速操作
+        st.markdown("""
+        ## 欢迎使用柴胡形态特征数据库系统
+        
+        本系统基于《柴胡词典2.xlsx》构建，专门用于管理和查询柴胡属植物的形态特征数据。
+        
+        **主要功能：**
+        - 🔍 **物种浏览与搜索**：按名称、特征搜索柴胡物种
+        - 📥 **数据导入**：导入Excel格式的柴胡形态特征数据
+        - 📊 **数据分析**：统计分析柴胡的形态特征分布
+        - ⚙️ **系统管理**：数据库维护和管理
+        
+        **快速开始：**
+        1. 在侧边栏选择"数据导入"页面
+        2. 上传您的Excel文件（柴胡词典2.xlsx）
+        3. 开始浏览和分析数据
+        """)
+        
+        # 显示最近添加的物种
+        recent_species = db.get_all_species(limit=6)
+        if recent_species:
+            st.markdown("### 📚 最近添加的物种")
+            display_species_cards(recent_species)
+    
+    elif page == "🔍 物种浏览":
+        render_species_browser()
+        
+        # 如果有选中的物种，显示详情
+        if 'selected_species' in st.session_state:
+            render_species_detail(st.session_state['selected_species'])
+    
+    elif page == "📥 数据导入":
+        render_data_import()
+    
+    elif page == "📊 数据分析":
+        render_data_analysis()
+    
+    elif page == "⚙️ 系统管理":
+        render_management()
+    
     elif page == "ℹ️ 关于系统":
         render_about_page()
-    
-    # 如果有选中的品种，显示详情
-    if 'selected_species' in st.session_state:
-        render_species_detail(st.session_state['selected_species'])
 
-# 关于页面
 def render_about_page():
+    """渲染关于页面"""
     st.markdown("""
     <div style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); 
                 color: white; padding: 2rem; border-radius: 10px; margin-bottom: 1.5rem;">
-        <h1 style="margin: 0; text-align: center;">🌿 柴胡查询系统</h1>
-        <p style="margin: 0.5rem 0; text-align: center; opacity: 0.9;">传统草药数据库 | v2.0.0</p>
+        <h1 style="margin: 0; text-align: center;">🌿 柴胡形态特征数据库系统</h1>
+        <p style="margin: 0.5rem 0; text-align: center; opacity: 0.9;">v2.0.0 | 基于Streamlit构建</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1104,38 +1180,40 @@ def render_about_page():
     with col1:
         st.markdown("### 📖 系统介绍")
         st.markdown("""
-        柴胡查询系统是一个专门为中医药研究者和爱好者设计的移动端Web应用，
-        用于查询和管理柴胡属植物的详细信息。
-        
-        **主要功能：**
-        - 🔍 智能搜索柴胡品种（支持高级筛选）
-        - 📚 浏览完整的柴胡数据库
-        - ➕ 添加和管理新品种信息
-        - 📥 批量导入/导出数据
-        - 📱 移动端优化，随时随地访问
-        - 📊 数据统计和管理
-        
-        **高级搜索功能：**
-        - 根据根、茎、叶、花等性状特征单独筛选
-        - 支持多条件组合查询
-        - 模糊匹配和精确匹配模式
+        柴胡形态特征数据库系统是一个专门为植物学家、中医药研究者和植物爱好者设计的Web应用，
+        用于管理、查询和分析柴胡属植物的详细形态特征数据。
         
         **数据来源：**
-        本系统数据基于《柴胡表型库》整理，涵盖36种柴胡及其变种。
+        本系统数据基于《柴胡词典2.xlsx》整理，涵盖柴胡属植物的30多个形态特征，
+        包括植株、叶片、花序、果实等多个方面的详细描述。
+        
+        **主要特性：**
+        - 📊 完整的形态特征数据管理
+        - 🔍 多条件高级搜索和筛选
+        - 📈 数据统计和可视化分析
+        - 📱 响应式设计，支持移动设备
+        - 📥 支持Excel数据导入导出
         """)
     
     with col2:
-        st.markdown("### 🛠️ 技术特性")
+        st.markdown("### 🛠️ 技术架构")
         st.markdown("""
         **前端技术：**
         - Streamlit框架
         - 响应式CSS设计
-        - 移动端优先
+        - 移动端优先设计
         
         **后端技术：**
         - SQLite数据库
+        - Pandas数据处理
         - 多条件查询优化
-        - 数据缓存机制
+        
+        **数据字段：**
+        系统支持30多个形态特征字段，包括：
+        - 植株特征：株型、株高、根颜色
+        - 叶片特征：叶形、叶尺寸、叶脉数
+        - 花序特征：花序直径、苞片特征
+        - 果实特征：果形、果颜色
         
         **部署方式：**
         - 支持本地运行
@@ -1145,128 +1223,32 @@ def render_about_page():
     
     st.markdown("---")
     
-    st.markdown("### 📱 移动端使用指南")
+    st.markdown("### 📱 使用指南")
     col_guide1, col_guide2, col_guide3 = st.columns(3)
     
     with col_guide1:
-        st.markdown("#### 1. 访问方式")
+        st.markdown("#### 1. 数据导入")
         st.markdown("""
-        打开手机浏览器
-        输入应用地址
-        无需安装APP
+        准备Excel文件
+        上传到系统
+        自动解析数据
         """)
     
     with col_guide2:
-        st.markdown("#### 2. 搜索功能")
+        st.markdown("#### 2. 数据浏览")
         st.markdown("""
-        支持关键词搜索
-        支持高级筛选
-        支持性状特征查询
+        按名称搜索
+        按特征筛选
+        查看详细数据
         """)
     
     with col_guide3:
-        st.markdown("#### 3. 数据管理")
+        st.markdown("#### 3. 数据分析")
         st.markdown("""
-        添加新品种
-        批量导入/导出
-        数据统计
+        查看统计信息
+        分析特征分布
+        导出分析结果
         """)
-
-# 浏览所有品种页面
-def render_browse_all():
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); 
-                color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-        <h2 style="margin: 0;">📚 柴胡品种库</h2>
-        <p style="margin: 0; opacity: 0.9;">浏览数据库中的所有柴胡品种</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 获取所有品种
-    all_species = db.search_species("")
-    
-    if not all_species:
-        st.info("📭 数据库为空，请先添加柴胡品种")
-        if st.button("📥 前往批量导入页面"):
-            st.session_state['page'] = "📥 批量导入"
-            st.rerun()
-        return
-    
-    # 显示统计
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("🌱 品种总数", len(all_species))
-    with col2:
-        total_varieties = sum(len(s.get('varieties', [])) for s in all_species)
-        st.metric("🌿 变种总数", total_varieties)
-    with col3:
-        st.metric("📅 最后更新", max([s.get('updated_at', '') for s in all_species if s.get('updated_at')])[:10] if all_species else "无")
-    
-    # 品种列表
-    st.subheader("📋 品种列表")
-    
-    # 搜索筛选
-    search_filter = st.text_input("🔍 筛选品种", placeholder="输入品种名称...")
-    
-    filtered_species = all_species
-    if search_filter:
-        filtered_species = [s for s in all_species if search_filter.lower() in s['name_chinese'].lower()]
-    
-    # 分页显示
-    page_size = 12
-    if 'browse_page' not in st.session_state:
-        st.session_state.browse_page = 1
-    
-    total_pages = max(1, (len(filtered_species) + page_size - 1) // page_size)
-    start_idx = (st.session_state.browse_page - 1) * page_size
-    end_idx = min(start_idx + page_size, len(filtered_species))
-    
-    # 分页控件
-    col1, col2, col3 = st.columns([2, 3, 2])
-    with col1:
-        if st.button("◀️ 上一页", disabled=st.session_state.browse_page <= 1, use_container_width=True):
-            st.session_state.browse_page -= 1
-            st.rerun()
-    
-    with col2:
-        st.markdown(f"<center>第 {st.session_state.browse_page} / {total_pages} 页</center>", unsafe_allow_html=True)
-    
-    with col3:
-        if st.button("下一页 ▶️", disabled=st.session_state.browse_page >= total_pages, use_container_width=True):
-            st.session_state.browse_page += 1
-            st.rerun()
-    
-    # 显示当前页的品种
-    current_species = filtered_species[start_idx:end_idx]
-    
-    # 网格显示
-    cols = st.columns(2)
-    
-    for idx, species in enumerate(current_species):
-        with cols[idx % len(cols)]:
-            with st.container():
-                card_html = f"""
-                <div class="species-card" style="height: 180px; display: flex; flex-direction: column;">
-                    <h4 style="margin: 0; color: #2c3e50;">{species['name_chinese']}</h4>
-                    <div style="flex-grow: 1;">
-                        <p style="margin: 0.5rem 0; font-size: 0.9rem; color: #555;">
-                            <strong>根:</strong> {truncate_text(species.get('root', '暂无'), 25)}
-                        </p>
-                        <p style="margin: 0.5rem 0; font-size: 0.9rem; color: #555;">
-                            <strong>叶:</strong> {truncate_text(species.get('leaf', '暂无'), 25)}
-                        </p>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 0.8rem; color: #777;">ID: {species['id']}</span>
-                        <span style="font-size: 0.8rem; color: #4CAF50;">📊</span>
-                    </div>
-                </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button("查看详情", key=f"browse_{species['id']}", use_container_width=True):
-                    st.session_state['selected_species'] = species['id']
-                    st.rerun()
 
 if __name__ == "__main__":
     main()
