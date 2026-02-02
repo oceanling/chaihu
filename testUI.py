@@ -440,12 +440,15 @@ def render_data_import():
     
     if uploaded_file is not None:
         try:
-            # 读取Excel文件
-            df = pd.read_excel(uploaded_file, sheet_name=0)
+            # 读取Excel文件 - 明确不读取索引列
+            df = pd.read_excel(uploaded_file, sheet_name=0, index_col=None)
+            
+            # 清理DataFrame：删除任何未命名的索引列
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
             
             # 显示数据预览
             st.markdown("### 👀 数据预览")
-            st.dataframe(df.head(10), use_container_width=True)
+            st.dataframe(df.head(10), width='stretch')
             
             # 显示列信息
             st.markdown(f"#### 📊 数据概览")
@@ -464,7 +467,7 @@ def render_data_import():
                 st.success(f"✅ 成功读取文件，共发现 {len(df)} 条记录")
                 
                 # 导入确认
-                if st.button("🚀 开始导入数据", type="primary", use_container_width=True):
+                if st.button("🚀 开始导入数据", type="primary", width='stretch'):
                     with st.spinner("正在导入数据..."):
                         result = db.import_from_excel_df(df)
                     
@@ -500,7 +503,7 @@ def render_data_import():
     st.markdown("---")
     st.markdown("### 📤 数据导出")
     
-    if st.button("📥 导出当前数据", use_container_width=True):
+    if st.button("📥 导出当前数据", width='stretch'):
         try:
             df_export = db.export_to_excel()
             
@@ -514,7 +517,7 @@ def render_data_import():
                 data=output.getvalue(),
                 file_name="柴胡形态特征数据库.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
             
             st.success("✅ 数据导出完成，请点击上方按钮下载")
@@ -568,7 +571,7 @@ def render_species_browser():
             max_vein = st.number_input("最大叶脉数", min_value=0, value=50, step=1)
         
         # 筛选按钮
-        if st.button("应用筛选", type="primary", use_container_width=True):
+        if st.button("应用筛选", type="primary", width='stretch'):
             st.session_state['filters_applied'] = True
     
     # 执行搜索
@@ -641,7 +644,7 @@ def display_species_cards(species_list: List[Dict[str, Any]]):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("查看详情", key=f"view_{species['id']}", use_container_width=True):
+                if st.button("查看详情", key=f"view_{species['id']}", width='stretch'):
                     st.session_state['selected_species'] = species['id']
                     st.rerun()
 
@@ -662,7 +665,7 @@ def display_species_table(species_list: List[Dict[str, Any]]):
         })
     
     df = pd.DataFrame(table_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
 
 def display_species_summary(species_list: List[Dict[str, Any]]):
     """以摘要形式显示物种"""
@@ -703,7 +706,7 @@ def render_species_detail(species_id: int):
         return
     
     # 返回按钮
-    if st.button("← 返回", use_container_width=True):
+    if st.button("← 返回", width='stretch'):
         if 'selected_species' in st.session_state:
             del st.session_state['selected_species']
         st.rerun()
@@ -1017,7 +1020,7 @@ def render_management():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 优化数据库", use_container_width=True):
+            if st.button("🔄 优化数据库", width='stretch'):
                 try:
                     with db.connect() as conn:
                         cursor = conn.cursor()
@@ -1028,7 +1031,7 @@ def render_management():
                     st.error(f"❌ 优化失败：{str(e)}")
         
         with col2:
-            if st.button("🗑️ 清空缓存", use_container_width=True):
+            if st.button("🗑️ 清空缓存", width='stretch'):
                 st.cache_resource.clear()
                 st.success("✅ 缓存已清理")
         
@@ -1036,12 +1039,12 @@ def render_management():
         with st.expander("🚨 危险操作", expanded=False):
             st.error("以下操作不可逆！")
             
-            if st.button("清空数据库", type="secondary", use_container_width=True):
+            if st.button("清空数据库", type="secondary", width='stretch'):
                 st.warning("这将删除所有数据！")
                 confirm = st.checkbox("我确认要清空数据库")
                 
                 if confirm:
-                    if st.button("确认清空", type="primary"):
+                    if st.button("确认清空", type="primary", width='stretch'):
                         db.clear_database()
                         st.success("✅ 数据库已清空")
                         st.rerun()
@@ -1057,12 +1060,12 @@ def render_management():
         # 导出功能
         st.markdown("### 📤 数据导出")
         
-        if st.button("导出完整数据", use_container_width=True):
+        if st.button("导出完整数据", width='stretch'):
             try:
                 df_export = db.export_to_excel()
                 
                 # 显示数据预览
-                st.dataframe(df_export.head(), use_container_width=True)
+                st.dataframe(df_export.head(), width='stretch')
                 
                 # 转换为CSV
                 csv_data = df_export.to_csv(index=False, encoding='utf-8-sig')
@@ -1072,7 +1075,7 @@ def render_management():
                     data=csv_data,
                     file_name="柴胡形态特征数据库.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width='stretch'
                 )
                 
                 st.success("✅ 数据导出完成")
@@ -1086,84 +1089,6 @@ def truncate_text(text: str, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
-
-def main():
-    """主应用"""
-    # 侧边栏导航
-    with st.sidebar:
-        st.title("🌿 导航菜单")
-        
-        page_options = [
-            "🏠 首页概览",
-            "🔍 物种浏览",
-            "📥 数据导入", 
-            "📊 数据分析",
-            "⚙️ 系统管理",
-            "ℹ️ 关于系统"
-        ]
-        
-        page = st.radio("选择页面", page_options, index=0)
-        
-        st.markdown("---")
-        
-        # 快速统计
-        stats = db.get_statistics()
-        st.markdown("### 📊 快速统计")
-        st.write(f"🌱 物种数: **{stats['total_species']}**")
-        st.write(f"📏 株型种类: **{stats['growth_forms']}**")
-        st.write(f"🍃 叶形种类: **{stats['leaf_shapes']}**")
-        
-        st.markdown("---")
-        
-        if st.button("🔄 刷新页面", use_container_width=True):
-            st.rerun()
-    
-    # 根据选择显示页面
-    render_header()
-    
-    if page == "🏠 首页概览":
-        # 显示欢迎信息和快速操作
-        st.markdown("""
-        ## 欢迎使用柴胡形态特征数据库系统
-        
-        本系统基于《柴胡词典2.xlsx》构建，专门用于管理和查询柴胡属植物的形态特征数据。
-        
-        **主要功能：**
-        - 🔍 **物种浏览与搜索**：按名称、特征搜索柴胡物种
-        - 📥 **数据导入**：导入Excel格式的柴胡形态特征数据
-        - 📊 **数据分析**：统计分析柴胡的形态特征分布
-        - ⚙️ **系统管理**：数据库维护和管理
-        
-        **快速开始：**
-        1. 在侧边栏选择"数据导入"页面
-        2. 上传您的Excel文件（柴胡词典2.xlsx）
-        3. 开始浏览和分析数据
-        """)
-        
-        # 显示最近添加的物种
-        recent_species = db.get_all_species(limit=6)
-        if recent_species:
-            st.markdown("### 📚 最近添加的物种")
-            display_species_cards(recent_species)
-    
-    elif page == "🔍 物种浏览":
-        render_species_browser()
-        
-        # 如果有选中的物种，显示详情
-        if 'selected_species' in st.session_state:
-            render_species_detail(st.session_state['selected_species'])
-    
-    elif page == "📥 数据导入":
-        render_data_import()
-    
-    elif page == "📊 数据分析":
-        render_data_analysis()
-    
-    elif page == "⚙️ 系统管理":
-        render_management()
-    
-    elif page == "ℹ️ 关于系统":
-        render_about_page()
 
 def render_about_page():
     """渲染关于页面"""
@@ -1249,6 +1174,84 @@ def render_about_page():
         分析特征分布
         导出分析结果
         """)
+
+def main():
+    """主应用"""
+    # 侧边栏导航
+    with st.sidebar:
+        st.title("🌿 导航菜单")
+        
+        page_options = [
+            "🏠 首页概览",
+            "🔍 物种浏览",
+            "📥 数据导入", 
+            "📊 数据分析",
+            "⚙️ 系统管理",
+            "ℹ️ 关于系统"
+        ]
+        
+        page = st.radio("选择页面", page_options, index=0)
+        
+        st.markdown("---")
+        
+        # 快速统计
+        stats = db.get_statistics()
+        st.markdown("### 📊 快速统计")
+        st.write(f"🌱 物种数: **{stats['total_species']}**")
+        st.write(f"📏 株型种类: **{stats['growth_forms']}**")
+        st.write(f"🍃 叶形种类: **{stats['leaf_shapes']}**")
+        
+        st.markdown("---")
+        
+        if st.button("🔄 刷新页面", width='stretch'):
+            st.rerun()
+    
+    # 根据选择显示页面
+    render_header()
+    
+    if page == "🏠 首页概览":
+        # 显示欢迎信息和快速操作
+        st.markdown("""
+        ## 欢迎使用柴胡形态特征数据库系统
+        
+        本系统基于《柴胡词典2.xlsx》构建，专门用于管理和查询柴胡属植物的形态特征数据。
+        
+        **主要功能：**
+        - 🔍 **物种浏览与搜索**：按名称、特征搜索柴胡物种
+        - 📥 **数据导入**：导入Excel格式的柴胡形态特征数据
+        - 📊 **数据分析**：统计分析柴胡的形态特征分布
+        - ⚙️ **系统管理**：数据库维护和管理
+        
+        **快速开始：**
+        1. 在侧边栏选择"数据导入"页面
+        2. 上传您的Excel文件（柴胡词典2.xlsx）
+        3. 开始浏览和分析数据
+        """)
+        
+        # 显示最近添加的物种
+        recent_species = db.get_all_species(limit=6)
+        if recent_species:
+            st.markdown("### 📚 最近添加的物种")
+            display_species_cards(recent_species)
+    
+    elif page == "🔍 物种浏览":
+        render_species_browser()
+        
+        # 如果有选中的物种，显示详情
+        if 'selected_species' in st.session_state:
+            render_species_detail(st.session_state['selected_species'])
+    
+    elif page == "📥 数据导入":
+        render_data_import()
+    
+    elif page == "📊 数据分析":
+        render_data_analysis()
+    
+    elif page == "⚙️ 系统管理":
+        render_management()
+    
+    elif page == "ℹ️ 关于系统":
+        render_about_page()
 
 if __name__ == "__main__":
     main()
