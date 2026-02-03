@@ -362,6 +362,13 @@ class BupleurumMorphologyDB:
             cursor.execute("SELECT species_name FROM bupleurum_species")
             return {row[0] for row in cursor.fetchall()}
     
+    def get_distinct_growth_forms(self) -> List[str]:
+        """获取所有不同的株型"""
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT growth_form FROM bupleurum_species WHERE growth_form IS NOT NULL AND growth_form != '' ORDER BY growth_form")
+            return [row[0] for row in cursor.fetchall()]
+    
     def clear_database(self):
         """清空数据库"""
         with self.connect() as conn:
@@ -445,6 +452,13 @@ def render_data_import():
             
             # 清理DataFrame：删除任何未命名的索引列
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+            
+            # 处理数值列，将"未明确"转换为NaN
+            numeric_columns = [col for col in df.columns if any(keyword in col for keyword in 
+                                                                ['最小', '最大', '长度', '宽度', '直径', '高度', '数量', '脉数'])]
+            
+            for col in numeric_columns:
+                df[col] = pd.to_numeric(df[col].replace('未明确', pd.NA), errors='coerce')
             
             # 显示数据预览
             st.markdown("### 👀 数据预览")
@@ -549,9 +563,11 @@ def render_species_browser():
     with st.expander("🔬 高级筛选", expanded=False):
         col1, col2, col3, col4 = st.columns(4)
         with col1:
+            # 使用新的方法获取不同的株型
+            growth_forms = db.get_distinct_growth_forms()
             growth_form = st.selectbox(
                 "株型",
-                ["全部"] + sorted([g for g in db.get_all_species() if g['growth_form']])
+                ["全部"] + growth_forms
             )
         with col2:
             leaf_shape_filter = st.text_input("叶形", placeholder="如：线形、披针形")
@@ -622,24 +638,37 @@ def display_species_cards(species_list: List[Dict[str, Any]]):
             with st.container():
                 # 计算株高范围
                 height_range = ""
-                if species.get('min_height_cm') and species.get('max_height_cm'):
-                    height_range = f"{species['min_height_cm']}-{species['max_height_cm']} cm"
-                elif species.get('min_height_cm'):
-                    height_range = f"≥{species['min_height_cm']} cm"
-                elif species.get('max_height_cm'):
-                    height_range = f"≤{species['max_height_cm']} cm"
+                min_height = species.get('min_height_cm')
+                max_height = species.get('max_height_cm')
+                if min_height is not None and max_height is not None:
+                    height_range = f"{min_height}-{max_height} cm"
+                elif min_height is not None:
+                    height_range = f"≥{min_height} cm"
+                elif max_height is not None:
+                    height_range = f"≤{max_height} cm"
+                
+                # 处理叶脉数
+                vein_range = ""
+                min_vein = species.get('min_vein_number')
+                max_vein = species.get('max_vein_number')
+                if min_vein is not None and max_vein is not None:
+                    vein_range = f"{min_vein}-{max_vein}"
+                elif min_vein is not None:
+                    vein_range = f"≥{min_vein}"
+                elif max_vein is not None:
+                    vein_range = f"≤{max_vein}"
                 
                 st.markdown(f"""
                 <div class="species-card">
                     <h3>{species['species_name']}</h3>
-                    <p><strong>📏 株型:</strong> {species.get('growth_form', '未明确')}</p>
+                    <p><strong>📏 株型:</strong> {species.get('growth_form', '未明确') or '未明确'}</p>
                     <p><strong>📐 株高:</strong> {height_range if height_range else '未明确'}</p>
-                    <p><strong>🍃 叶形:</strong> {truncate_text(species.get('leaf_shape', '未明确'), 20)}</p>
-                    <p><strong>🌸 花色:</strong> {species.get('petal_color', '未明确')}</p>
-                    <p><strong>🍎 果形:</strong> {species.get('fruit_shape', '未明确')}</p>
+                    <p><strong>🍃 叶形:</strong> {truncate_text(species.get('leaf_shape', '未明确') or '未明确', 20)}</p>
+                    <p><strong>🌸 花色:</strong> {species.get('petal_color', '未明确') or '未明确'}</p>
+                    <p><strong>🍎 果形:</strong> {species.get('fruit_shape', '未明确') or '未明确'}</p>
                     <div style="margin-top: 0.5rem;">
                         <span class="feature-tag">ID: {species['id']}</span>
-                        {f'<span class="feature-tag">叶脉: {species.get("min_vein_number", "")}-{species.get("max_vein_number", "")}</span>' if species.get('min_vein_number') or species.get('max_vein_number') else ''}
+                        {f'<span class="feature-tag">叶脉: {vein_range}</span>' if vein_range else ''}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -656,12 +685,12 @@ def display_species_table(species_list: List[Dict[str, Any]]):
         table_data.append({
             "ID": species['id'],
             "物种名称": species['species_name'],
-            "株型": species.get('growth_form', ''),
-            "株高范围(cm)": f"{species.get('min_height_cm', '')}-{species.get('max_height_cm', '')}",
-            "叶形": species.get('leaf_shape', ''),
-            "花色": species.get('petal_color', ''),
-            "果形": species.get('fruit_shape', ''),
-            "叶脉数": f"{species.get('min_vein_number', '')}-{species.get('max_vein_number', '')}"
+            "株型": species.get('growth_form', '') or '',
+            "株高范围(cm)": f"{species.get('min_height_cm', '')}-{species.get('max_height_cm', '')}" if species.get('min_height_cm') or species.get('max_height_cm') else '',
+            "叶形": species.get('leaf_shape', '') or '',
+            "花色": species.get('petal_color', '') or '',
+            "果形": species.get('fruit_shape', '') or '',
+            "叶脉数": f"{species.get('min_vein_number', '')}-{species.get('max_vein_number', '')}" if species.get('min_vein_number') or species.get('max_vein_number') else ''
         })
     
     df = pd.DataFrame(table_data)
@@ -670,30 +699,44 @@ def display_species_table(species_list: List[Dict[str, Any]]):
 def display_species_summary(species_list: List[Dict[str, Any]]):
     """以摘要形式显示物种"""
     for species in species_list:
-        with st.expander(f"🌿 {species['species_name']} - {species.get('growth_form', '')}"):
+        with st.expander(f"🌿 {species['species_name']} - {species.get('growth_form', '') or ''}"):
             col1, col2 = st.columns(2)
             
             with col1:
                 st.markdown("#### 📏 植株特征")
-                st.write(f"**株高:** {species.get('min_height_cm', '')}-{species.get('max_height_cm', '')} cm")
-                st.write(f"**根颜色:** {species.get('root_color', '未明确')}")
+                min_height = species.get('min_height_cm')
+                max_height = species.get('max_height_cm')
+                height_text = f"{min_height}-{max_height} cm" if min_height is not None and max_height is not None else '未明确'
+                st.write(f"**株高:** {height_text}")
+                st.write(f"**根颜色:** {species.get('root_color', '未明确') or '未明确'}")
                 
                 st.markdown("#### 🍃 叶片特征")
-                st.write(f"**叶形:** {species.get('leaf_shape', '未明确')}")
-                st.write(f"**叶尺寸:** {species.get('leaf_min_length_cm', '')}-{species.get('leaf_max_length_cm', '')} cm × {species.get('leaf_min_width_mm', '')}-{species.get('leaf_max_width_mm', '')} mm")
-                st.write(f"**叶颜色:** {species.get('leaf_color', '未明确')}")
-                st.write(f"**叶脉数:** {species.get('min_vein_number', '')}-{species.get('max_vein_number', '')}")
+                st.write(f"**叶形:** {species.get('leaf_shape', '未明确') or '未明确'}")
+                leaf_min_len = species.get('leaf_min_length_cm')
+                leaf_max_len = species.get('leaf_max_length_cm')
+                leaf_min_wid = species.get('leaf_min_width_mm')
+                leaf_max_wid = species.get('leaf_max_width_mm')
+                leaf_size_text = f"{leaf_min_len}-{leaf_max_len} cm × {leaf_min_wid}-{leaf_max_wid} mm" if all(v is not None for v in [leaf_min_len, leaf_max_len, leaf_min_wid, leaf_max_wid]) else '未明确'
+                st.write(f"**叶尺寸:** {leaf_size_text}")
+                st.write(f"**叶颜色:** {species.get('leaf_color', '未明确') or '未明确'}")
+                min_vein = species.get('min_vein_number')
+                max_vein = species.get('max_vein_number')
+                vein_text = f"{min_vein}-{max_vein}" if min_vein is not None and max_vein is not None else '未明确'
+                st.write(f"**叶脉数:** {vein_text}")
             
             with col2:
                 st.markdown("#### 🌸 花序特征")
-                st.write(f"**花序直径:** {species.get('min_inflorescence_diameter_cm', '')}-{species.get('max_inflorescence_diameter_cm', '')} cm")
-                st.write(f"**总苞片:** {species.get('bract_number', '')}个, {species.get('bract_shape', '')}, {species.get('min_bract_length_mm', '')}-{species.get('max_bract_length_mm', '')} mm")
-                st.write(f"**伞辐:** {species.get('ray_number', '')}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
-                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_mm', '')} mm, {species.get('umbellet_number', '')}个")
+                min_inflorescence = species.get('min_inflorescence_diameter_cm')
+                max_inflorescence = species.get('max_inflorescence_diameter_cm')
+                inflorescence_text = f"{min_inflorescence}-{max_inflorescence} cm" if min_inflorescence is not None and max_inflorescence is not None else '未明确'
+                st.write(f"**花序直径:** {inflorescence_text}")
+                st.write(f"**总苞片:** {species.get('bract_number', '') or ''}个, {species.get('bract_shape', '') or ''}, {species.get('min_bract_length_mm', '')}-{species.get('max_bract_length_mm', '')} mm")
+                st.write(f"**伞辐:** {species.get('ray_number', '') or ''}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
+                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_mm', '') or ''} mm, {species.get('umbellet_number', '') or ''}个")
                 
                 st.markdown("#### 🍎 果实特征")
-                st.write(f"**果形:** {species.get('fruit_shape', '未明确')}")
-                st.write(f"**果颜色:** {species.get('fruit_color', '未明确')}")
+                st.write(f"**果形:** {species.get('fruit_shape', '未明确') or '未明确'}")
+                st.write(f"**果颜色:** {species.get('fruit_color', '未明确') or '未明确'}")
 
 def render_species_detail(species_id: int):
     """渲染物种详情页面"""
@@ -726,21 +769,23 @@ def render_species_detail(species_id: int):
     with tabs[0]:
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("株型", species.get('growth_form', '未明确'))
+            st.metric("株型", species.get('growth_form', '未明确') or '未明确')
         with col2:
-            height_range = f"{species.get('min_height_cm', '')}-{species.get('max_height_cm', '')} cm"
-            st.metric("株高范围", height_range if height_range != '-' else '未明确')
+            min_height = species.get('min_height_cm')
+            max_height = species.get('max_height_cm')
+            height_range = f"{min_height}-{max_height} cm" if min_height is not None and max_height is not None else '未明确'
+            st.metric("株高范围", height_range)
         with col3:
-            st.metric("根颜色", species.get('root_color', '未明确'))
+            st.metric("根颜色", species.get('root_color', '未明确') or '未明确')
     
     with tabs[1]:
         st.markdown('<div class="feature-group">', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### 📏 植株尺寸")
-            st.write(f"**最小株高:** {species.get('min_height_cm', '未明确')} cm")
-            st.write(f"**最大株高:** {species.get('max_height_cm', '未明确')} cm")
-            st.write(f"**根颜色:** {species.get('root_color', '未明确')}")
+            st.write(f"**最小株高:** {species.get('min_height_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大株高:** {species.get('max_height_cm', '未明确') or '未明确'} cm")
+            st.write(f"**根颜色:** {species.get('root_color', '未明确') or '未明确'}")
         
         with col2:
             st.markdown("##### 🏷️ 其他特征")
@@ -752,17 +797,17 @@ def render_species_detail(species_id: int):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### 📐 叶片尺寸")
-            st.write(f"**最小长度:** {species.get('leaf_min_length_cm', '未明确')} cm")
-            st.write(f"**最大长度:** {species.get('leaf_max_length_cm', '未明确')} cm")
-            st.write(f"**最小宽度:** {species.get('leaf_min_width_mm', '未明确')} mm")
-            st.write(f"**最大宽度:** {species.get('leaf_max_width_mm', '未明确')} mm")
+            st.write(f"**最小长度:** {species.get('leaf_min_length_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大长度:** {species.get('leaf_max_length_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最小宽度:** {species.get('leaf_min_width_mm', '未明确') or '未明确'} mm")
+            st.write(f"**最大宽度:** {species.get('leaf_max_width_mm', '未明确') or '未明确'} mm")
         
         with col2:
             st.markdown("##### 🎨 叶片特征")
-            st.write(f"**叶形:** {species.get('leaf_shape', '未明确')}")
-            st.write(f"**叶颜色:** {species.get('leaf_color', '未明确')}")
-            st.write(f"**最小叶脉数:** {species.get('min_vein_number', '未明确')}")
-            st.write(f"**最大叶脉数:** {species.get('max_vein_number', '未明确')}")
+            st.write(f"**叶形:** {species.get('leaf_shape', '未明确') or '未明确'}")
+            st.write(f"**叶颜色:** {species.get('leaf_color', '未明确') or '未明确'}")
+            st.write(f"**最小叶脉数:** {species.get('min_vein_number', '未明确') or '未明确'}")
+            st.write(f"**最大叶脉数:** {species.get('max_vein_number', '未明确') or '未明确'}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[3]:
@@ -770,35 +815,35 @@ def render_species_detail(species_id: int):
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown("##### 🌸 花序特征")
-            st.write(f"**最小花序直径:** {species.get('min_inflorescence_diameter_cm', '未明确')} cm")
-            st.write(f"**最大花序直径:** {species.get('max_inflorescence_diameter_cm', '未明确')} cm")
-            st.write(f"**花瓣颜色:** {species.get('petal_color', '未明确')}")
+            st.write(f"**最小花序直径:** {species.get('min_inflorescence_diameter_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大花序直径:** {species.get('max_inflorescence_diameter_cm', '未明确') or '未明确'} cm")
+            st.write(f"**花瓣颜色:** {species.get('petal_color', '未明确') or '未明确'}")
         
         with col2:
             st.markdown("##### 🍃 总苞片")
-            st.write(f"**数量:** {species.get('bract_number', '未明确')}")
-            st.write(f"**形状:** {species.get('bract_shape', '未明确')}")
-            st.write(f"**最小长度:** {species.get('min_bract_length_mm', '未明确')} mm")
-            st.write(f"**最大长度:** {species.get('max_bract_length_mm', '未明确')} mm")
+            st.write(f"**数量:** {species.get('bract_number', '未明确') or '未明确'}")
+            st.write(f"**形状:** {species.get('bract_shape', '未明确') or '未明确'}")
+            st.write(f"**最小长度:** {species.get('min_bract_length_mm', '未明确') or '未明确'} mm")
+            st.write(f"**最大长度:** {species.get('max_bract_length_mm', '未明确') or '未明确'} mm")
         
         with col3:
             st.markdown("##### ☂️ 伞辐特征")
-            st.write(f"**数量:** {species.get('ray_number', '未明确')}")
-            st.write(f"**最小长度:** {species.get('min_ray_length_cm', '未明确')} cm")
-            st.write(f"**最大长度:** {species.get('max_ray_length_cm', '未明确')} cm")
+            st.write(f"**数量:** {species.get('ray_number', '未明确') or '未明确'}")
+            st.write(f"**最小长度:** {species.get('min_ray_length_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大长度:** {species.get('max_ray_length_cm', '未明确') or '未明确'} cm")
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="feature-group">', unsafe_allow_html=True)
         col4, col5 = st.columns(2)
         with col4:
             st.markdown("##### 🌼 小伞形花序")
-            st.write(f"**直径:** {species.get('umbellet_diameter_mm', '未明确')} mm")
-            st.write(f"**数量:** {species.get('umbellet_number', '未明确')}")
+            st.write(f"**直径:** {species.get('umbellet_diameter_mm', '未明确') or '未明确'} mm")
+            st.write(f"**数量:** {species.get('umbellet_number', '未明确') or '未明确'}")
         
         with col5:
             st.markdown("##### 🍂 小总苞片")
-            st.write(f"**数量:** {species.get('bracteole_number', '未明确')}")
-            st.write(f"**形状:** {species.get('bracteole_shape', '未明确')}")
+            st.write(f"**数量:** {species.get('bracteole_number', '未明确') or '未明确'}")
+            st.write(f"**形状:** {species.get('bracteole_shape', '未明确') or '未明确'}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[4]:
@@ -806,10 +851,10 @@ def render_species_detail(species_id: int):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### 🍎 果实形状")
-            st.write(f"**果形:** {species.get('fruit_shape', '未明确')}")
+            st.write(f"**果形:** {species.get('fruit_shape', '未明确') or '未明确'}")
         with col2:
             st.markdown("##### 🎨 果实颜色")
-            st.write(f"**果颜色:** {species.get('fruit_color', '未明确')}")
+            st.write(f"**果颜色:** {species.get('fruit_color', '未明确') or '未明确'}")
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[5]:
@@ -863,10 +908,11 @@ def render_species_detail(species_id: int):
         
         for field, value in data_items:
             if value not in [None, '', 'nan', '未明确']:
+                display_value = value if value is not None else ''
                 html_table += f"""
                 <tr>
                     <td><strong>{field}</strong></td>
-                    <td>{value}</td>
+                    <td>{display_value}</td>
                 </tr>
                 """
         
@@ -877,7 +923,7 @@ def render_data_analysis():
     """渲染数据分析页面"""
     st.markdown("""
     <div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); 
-                color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+                color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1.rem;">
         <h2 style="margin: 0;">📊 数据分析</h2>
         <p style="margin: 0; opacity: 0.9;">柴胡形态特征统计分析</p>
     </div>
@@ -921,20 +967,28 @@ def render_data_analysis():
         growth_forms = {}
         for species in all_species:
             form = species.get('growth_form', '未明确')
-            growth_forms[form] = growth_forms.get(form, 0) + 1
+            if form:
+                growth_forms[form] = growth_forms.get(form, 0) + 1
         
-        common_form = max(growth_forms.items(), key=lambda x: x[1])[0] if growth_forms else "无"
-        st.metric("最常见株型", common_form)
+        if growth_forms:
+            common_form = max(growth_forms.items(), key=lambda x: x[1])[0]
+            st.metric("最常见株型", common_form)
+        else:
+            st.metric("最常见株型", "无数据")
     
     with col4:
         # 花色分布
         colors = {}
         for species in all_species:
             color = species.get('petal_color', '未明确')
-            colors[color] = colors.get(color, 0) + 1
+            if color:
+                colors[color] = colors.get(color, 0) + 1
         
-        common_color = max(colors.items(), key=lambda x: x[1])[0] if colors else "无"
-        st.metric("最常见花色", common_color)
+        if colors:
+            common_color = max(colors.items(), key=lambda x: x[1])[0]
+            st.metric("最常见花色", common_color)
+        else:
+            st.metric("最常见花色", "无数据")
     
     # 特征分布分析
     st.markdown("### 📊 特征分布")
@@ -946,7 +1000,8 @@ def render_data_analysis():
         growth_form_counts = {}
         for species in all_species:
             form = species.get('growth_form', '未明确')
-            growth_form_counts[form] = growth_form_counts.get(form, 0) + 1
+            if form:
+                growth_form_counts[form] = growth_form_counts.get(form, 0) + 1
         
         if growth_form_counts:
             df_growth = pd.DataFrame({
@@ -963,7 +1018,7 @@ def render_data_analysis():
             shape = species.get('leaf_shape', '未明确')
             if shape and shape != '未明确':
                 # 处理多个叶形的情况
-                shapes = [s.strip() for s in shape.split('、') if s.strip()]
+                shapes = [s.strip() for s in str(shape).split('、') if s.strip()]
                 for s in shapes:
                     leaf_shape_counts[s] = leaf_shape_counts.get(s, 0) + 1
         
@@ -980,7 +1035,8 @@ def render_data_analysis():
         fruit_shape_counts = {}
         for species in all_species:
             shape = species.get('fruit_shape', '未明确')
-            fruit_shape_counts[shape] = fruit_shape_counts.get(shape, 0) + 1
+            if shape:
+                fruit_shape_counts[shape] = fruit_shape_counts.get(shape, 0) + 1
         
         if fruit_shape_counts:
             df_fruit = pd.DataFrame({
@@ -1086,9 +1142,9 @@ def truncate_text(text: str, max_length: int) -> str:
     """截断文本并添加省略号"""
     if not text:
         return "未明确"
-    if len(text) <= max_length:
-        return text
-    return text[:max_length] + "..."
+    if len(str(text)) <= max_length:
+        return str(text)
+    return str(text)[:max_length] + "..."
 
 def render_about_page():
     """渲染关于页面"""
