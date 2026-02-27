@@ -296,40 +296,47 @@ class BupleurumMorphologyDB:
             return dict(row) if row else None
     
     def search_species(self, query: str = "", filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """搜索物种"""
+        """增强版搜索 - 支持所有字段筛选"""
+
         with self.connect() as conn:
             cursor = conn.cursor()
-            
+
             sql = "SELECT * FROM bupleurum_species WHERE 1=1"
             params = []
-            
+
+            # 关键词搜索
             if query:
                 sql += " AND (species_name LIKE ? OR leaf_shape LIKE ? OR fruit_shape LIKE ?)"
                 search_term = f"%{query}%"
                 params.extend([search_term, search_term, search_term])
-            
+
+            # 高级筛选
             if filters:
-                for key, value in filters.items():
-                    if value:
-                        if key in ['min_height', 'max_height', 'min_vein', 'max_vein']:
-                            # 数值范围筛选
-                            if key == 'min_height':
-                                sql += " AND min_height_cm >= ?"
-                            elif key == 'max_height':
-                                sql += " AND max_height_cm <= ?"
-                            elif key == 'min_vein':
-                                sql += " AND min_vein_number >= ?"
-                            elif key == 'max_vein':
-                                sql += " AND max_vein_number <= ?"
-                            params.append(float(value))
-                        else:
-                            # 文本筛选
-                            sql += f" AND {key} LIKE ?"
-                            params.append(f"%{value}%")
-            
+                for field, value in filters.items():
+
+                    # 数值字段（统一 >= 处理）
+                    numeric_fields = [
+                        "min_height_cm","max_height_cm",
+                        "leaf_min_length_cm","leaf_max_length_cm",
+                        "leaf_min_width_mm","leaf_max_width_mm",
+                        "min_vein_number","max_vein_number",
+                        "min_inflorescence_diameter_cm","max_inflorescence_diameter_cm",
+                        "min_bract_length_mm","max_bract_length_mm",
+                        "min_ray_length_cm","max_ray_length_cm"
+                    ]
+
+                    if field in numeric_fields:
+                        sql += f" AND {field} >= ?"
+                        params.append(value)
+                    else:
+                        sql += f" AND {field} LIKE ?"
+                        params.append(f"%{value}%")
+
             sql += " ORDER BY species_name"
             cursor.execute(sql, params)
+
             return [dict(row) for row in cursor.fetchall()]
+
     
     def get_statistics(self) -> Dict[str, Any]:
         """获取数据库统计信息"""
@@ -539,7 +546,8 @@ def render_data_import():
             st.error(f"❌ 导出失败: {str(e)}")
 
 def render_species_browser():
-    """渲染物种浏览页面"""
+    """渲染物种浏览页面（全字段高级筛选版）"""
+
     st.markdown("""
     <div style="background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); 
                 color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
@@ -547,87 +555,125 @@ def render_species_browser():
         <p style="margin: 0; opacity: 0.9;">浏览和搜索柴胡属植物的形态特征</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # 搜索和筛选
+
     col1, col2 = st.columns([3, 1])
     with col1:
-        search_query = st.text_input(
-            "搜索物种", 
-            placeholder="输入物种名称、叶形、果形等关键词...",
-            key="search_query"
-        )
+        search_query = st.text_input("搜索物种")
     with col2:
         search_limit = st.selectbox("显示数量", [10, 25, 50, 100], index=1)
-    
-    # 高级筛选
+
+    # ================= 高级筛选 =================
     with st.expander("🔬 高级筛选", expanded=False):
+
         col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            # 使用新的方法获取不同的株型
-            growth_forms = db.get_distinct_growth_forms()
-            growth_form = st.selectbox(
-                "株型",
-                ["全部"] + growth_forms
-            )
-        with col2:
-            leaf_shape_filter = st.text_input("叶形", placeholder="如：线形、披针形")
-        with col3:
-            fruit_shape_filter = st.text_input("果形", placeholder="如：椭圆形、长圆形")
-        with col4:
-            petal_color_filter = st.text_input("花色", placeholder="如：黄色、紫色")
-        
+        growth_form = col1.text_input("株型")
+        root_color = col2.text_input("根颜色")
+        leaf_shape = col3.text_input("叶形")
+        leaf_color = col4.text_input("叶颜色")
+
         col5, col6, col7, col8 = st.columns(4)
-        with col5:
-            min_height = st.number_input("最小株高(cm)", min_value=0.0, value=0.0, step=5.0)
-        with col6:
-            max_height = st.number_input("最大株高(cm)", min_value=0.0, value=200.0, step=5.0)
-        with col7:
-            min_vein = st.number_input("最小叶脉数", min_value=0, value=0, step=1)
-        with col8:
-            max_vein = st.number_input("最大叶脉数", min_value=0, value=50, step=1)
-        
-        # 筛选按钮
-        if st.button("应用筛选", type="primary", width='stretch'):
-            st.session_state['filters_applied'] = True
-    
-    # 执行搜索
+        min_height = col5.number_input("最小株高(cm)", 0.0)
+        max_height = col6.number_input("最大株高(cm)", 0.0)
+        leaf_min_len = col7.number_input("叶最小长度(cm)", 0.0)
+        leaf_max_len = col8.number_input("叶最大长度(cm)", 0.0)
+
+        col9, col10, col11, col12 = st.columns(4)
+        leaf_min_w = col9.number_input("叶最小宽度(mm)", 0.0)
+        leaf_max_w = col10.number_input("叶最大宽度(mm)", 0.0)
+        min_vein = col11.number_input("最小叶脉数", 0)
+        max_vein = col12.number_input("最大叶脉数", 0)
+
+        col13, col14, col15, col16 = st.columns(4)
+        min_inf = col13.number_input("最小花序直径(cm)", 0.0)
+        max_inf = col14.number_input("最大花序直径(cm)", 0.0)
+        bract_number = col15.text_input("总苞片数量")
+        bract_shape = col16.text_input("总苞片形状")
+
+        col17, col18, col19, col20 = st.columns(4)
+        min_bract_len = col17.number_input("总苞片最小长度(mm)", 0.0)
+        max_bract_len = col18.number_input("总苞片最大长度(mm)", 0.0)
+        ray_number = col19.text_input("伞幅数量")
+        min_ray_len = col20.number_input("最小伞幅长度(cm)", 0.0)
+
+        col21, col22, col23, col24 = st.columns(4)
+        max_ray_len = col21.number_input("最大伞幅长度(cm)", 0.0)
+        umbellet_d = col22.text_input("小伞形花序直径")
+        bracteole_number = col23.text_input("小总苞片数量")
+        bracteole_shape = col24.text_input("小总苞片形状")
+
+        col25, col26, col27, col28 = st.columns(4)
+        umbellet_number = col25.text_input("小伞形花序数量")
+        petal_color = col26.text_input("花瓣颜色")
+        fruit_shape = col27.text_input("果形状")
+        fruit_color = col28.text_input("果颜色")
+
+        apply_filter = st.button("应用筛选", type="primary", width='stretch')
+
+    # ================= 构建筛选条件 =================
+
     filters = {}
-    if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
-        if growth_form and growth_form != "全部":
-            filters['growth_form'] = growth_form
-        if leaf_shape_filter:
-            filters['leaf_shape'] = leaf_shape_filter
-        if fruit_shape_filter:
-            filters['fruit_shape'] = fruit_shape_filter
-        if petal_color_filter:
-            filters['petal_color'] = petal_color_filter
-        if min_height > 0:
-            filters['min_height'] = min_height
-        if max_height < 200:
-            filters['max_height'] = max_height
-        if min_vein > 0:
-            filters['min_vein'] = min_vein
-        if max_vein < 50:
-            filters['max_vein'] = max_vein
-    
-    results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
-    
-    # 显示结果
+
+    if apply_filter:
+
+        text_fields = {
+            "growth_form": growth_form,
+            "root_color": root_color,
+            "leaf_shape": leaf_shape,
+            "leaf_color": leaf_color,
+            "bract_number": bract_number,
+            "bract_shape": bract_shape,
+            "ray_number": ray_number,
+            "umbellet_diameter_mm": umbellet_d,
+            "bracteole_number": bracteole_number,
+            "bracteole_shape": bracteole_shape,
+            "umbellet_number": umbellet_number,
+            "petal_color": petal_color,
+            "fruit_shape": fruit_shape,
+            "fruit_color": fruit_color,
+        }
+
+        for k, v in text_fields.items():
+            if v:
+                filters[k] = v
+
+        numeric_fields = {
+            "min_height_cm": min_height,
+            "max_height_cm": max_height,
+            "leaf_min_length_cm": leaf_min_len,
+            "leaf_max_length_cm": leaf_max_len,
+            "leaf_min_width_mm": leaf_min_w,
+            "leaf_max_width_mm": leaf_max_w,
+            "min_vein_number": min_vein,
+            "max_vein_number": max_vein,
+            "min_inflorescence_diameter_cm": min_inf,
+            "max_inflorescence_diameter_cm": max_inf,
+            "min_bract_length_mm": min_bract_len,
+            "max_bract_length_mm": max_bract_len,
+            "min_ray_length_cm": min_ray_len,
+            "max_ray_length_cm": max_ray_len
+        }
+
+        for k, v in numeric_fields.items():
+            if v > 0:
+                filters[k] = v
+
+    results = db.search_species(search_query, filters) if (search_query or filters) else db.get_all_species(search_limit)
+
     if not results:
         st.warning("🔍 未找到匹配的物种。")
         return
-    
+
     st.success(f"✅ 找到 {len(results)} 个物种")
-    
-    # 显示模式选择
+
     view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True)
-    
+
     if view_mode == "卡片视图":
         display_species_cards(results)
     elif view_mode == "表格视图":
         display_species_table(results)
     else:
         display_species_summary(results)
+
 
 def display_species_cards(species_list: List[Dict[str, Any]]):
     """以卡片形式显示物种"""
@@ -1311,3 +1357,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
