@@ -121,7 +121,7 @@ class BupleurumMorphologyDB:
         with self.connect() as conn:
             cursor = conn.cursor()
             
-            # 创建主表 - 对应Excel中的所有列
+            # 创建主表（如果不存在）
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS bupleurum_species (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,7 +159,14 @@ class BupleurumMorphologyDB:
             )
             ''')
             
-            # 创建索引以提高查询性能
+            # 检查并添加 description 字段（如果不存在）
+            cursor.execute("PRAGMA table_info(bupleurum_species)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'description' not in columns:
+                cursor.execute("ALTER TABLE bupleurum_species ADD COLUMN description TEXT")
+                print("字段 'description' 已添加到数据库表。")
+            
+            # 创建索引（保持不变）
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_species_name ON bupleurum_species(species_name)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_growth_form ON bupleurum_species(growth_form)')
             
@@ -354,7 +361,62 @@ class BupleurumMorphologyDB:
             sql += " ORDER BY species_name"
             cursor.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
-    
+            
+     def import_descriptions_from_excel(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        从“柴胡表型库”DataFrame导入物种描述，更新到现有物种记录。
+        期望的DataFrame结构：至少包含两列，第一列为物种名称，第二列为详细描述。
+        如果存在第三列（英文描述），也会被合并。
+        """
+        results = {
+            'total': len(df),
+            'matched': 0,
+            'updated': 0,
+            'not_found': [],
+            'errors': []
+        }
+        
+        # 获取所有现有物种名称（用于快速匹配）
+        existing_names = {name.lower().strip(): name for name in self.get_all_species_names()}
+        
+        for idx, row in df.iterrows():
+            try:
+                # 假设第一列是物种名称，第二列是中文描述，第三列可能是变种信息，第四列是英文描述（可根据实际调整）
+                name_cell = str(row.iloc[0]).strip()
+                if pd.isna(name_cell) or name_cell == '':
+                    continue
+                    
+                # 提取描述：第二列（中文） + 第四列（英文）如果有的话
+                desc_cn = str(row.iloc[1]) if len(row) > 1 and not pd.isna(row.iloc[1]) else ''
+                desc_en = str(row.iloc[3]) if len(row) > 3 and not pd.isna(row.iloc[3]) else ''
+                
+                # 合并描述，可以用分隔符分开
+                full_description = desc_cn
+                if desc_en:
+                    full_description += "\n\n[英文描述]\n" + desc_en
+                
+                # 尝试匹配物种名称
+                matched_key = name_cell.lower().strip()
+                if matched_key in existing_names:
+                    db_name = existing_names[matched_key]
+                    # 更新数据库中的 description 字段
+                    with self.connect() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE bupleurum_species SET description = ? WHERE species_name = ?",
+                            (full_description, db_name)
+                        )
+                        if cursor.rowcount > 0:
+                            results['updated'] += 1
+                    results['matched'] += 1
+                else:
+                    # 如果没找到，记录未匹配的名称
+                    results['not_found'].append(name_cell)
+                    
+            except Exception as e:
+                results['errors'].append(f"行{idx+2}: {str(e)}")
+        
+        return results   
     def get_statistics(self) -> Dict[str, Any]:
         """获取数据库统计信息"""
         with self.connect() as conn:
@@ -536,7 +598,62 @@ def render_data_import():
         
         except Exception as e:
             st.error(f"❌ 文件读取失败: {str(e)}")
-    
+        st.markdown("---")
+                # 新增：表型库导入区域
+        st.markdown("""
+        <div style="background: #f0f7ff; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+            <h2 style="margin: 0; color: #2c3e50;">📖 导入表型库详细描述</h2>
+            <p style="margin: 0; color: #7f8c8d;">上传《柴胡表型库2.1.xlsx》，将详细描述添加到现有物种记录中</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        uploaded_desc_file = st.file_uploader(
+            "选择表型库Excel文件", 
+            type=['xlsx', 'xls'], 
+            key="desc_uploader"
+        )
+        
+        if uploaded_desc_file is not None:
+            try:
+                # 读取Excel，不指定表头行，因为第一行可能是数据（或者可能有标题行，需根据实际情况调整）
+                df_desc = pd.read_excel(uploaded_desc_file, sheet_name=0, header=None)
+                
+                # 预览前几行
+                st.markdown("### 👀 数据预览")
+                st.dataframe(df_desc.head(10))
+                
+                st.write(f"- 总行数: {len(df_desc)}")
+                st.write(f"- 列数: {len(df_desc.columns)}")
+                
+                # 导入确认
+                if st.button("🚀 开始导入表型库描述", type="primary", key="import_desc"):
+                    with st.spinner("正在匹配并更新描述..."):
+                        result = db.import_descriptions_from_excel(df_desc)
+                    
+                    # 显示结果
+                    st.markdown("### 📊 导入结果")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("总记录数", result['total'])
+                    with col2:
+                        st.metric("匹配更新", result['updated'])
+                    with col3:
+                        st.metric("未匹配", len(result['not_found']))
+                    
+                    if result['not_found']:
+                        st.warning(f"以下名称未在数据库中找到：{', '.join(result['not_found'][:10])}" + 
+                                   ("..." if len(result['not_found']) > 10 else ""))
+                    
+                    if result['errors']:
+                        st.error("导入过程中发生错误：")
+                        for err in result['errors'][:5]:
+                            st.write(f"- {err}")
+                    
+                    st.success("✅ 描述导入完成")
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"❌ 文件读取失败: {str(e)}")
     # 数据导出
     st.markdown("---")
     st.markdown("### 📤 数据导出")
@@ -784,28 +901,7 @@ def display_species_cards(species_list: List[Dict[str, Any]]):
     for idx, species in enumerate(species_list):
         with cols[idx % len(cols)]:
             with st.container():
-                # 计算株高范围
-                height_range = ""
-                min_height = species.get('min_height_cm')
-                max_height = species.get('max_height_cm')
-                if min_height is not None and max_height is not None:
-                    height_range = f"{min_height}-{max_height} cm"
-                elif min_height is not None:
-                    height_range = f"≥{min_height} cm"
-                elif max_height is not None:
-                    height_range = f"≤{max_height} cm"
-                
-                # 处理叶脉数
-                vein_range = ""
-                min_vein = species.get('min_vein_number')
-                max_vein = species.get('max_vein_number')
-                if min_vein is not None and max_vein is not None:
-                    vein_range = f"{min_vein}-{max_vein}"
-                elif min_vein is not None:
-                    vein_range = f"≥{min_vein}"
-                elif max_vein is not None:
-                    vein_range = f"≤{max_vein}"
-                
+                # 原有卡片内容保持不变...
                 st.markdown(f"""
                 <div class="species-card">
                     <h3>{species['species_name']}</h3>
@@ -820,6 +916,12 @@ def display_species_cards(species_list: List[Dict[str, Any]]):
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+                
+                # 新增：如果存在描述，显示一个可折叠区域
+                desc = species.get('description', '')
+                if desc and not pd.isna(desc):
+                    with st.expander("📖 详细描述"):
+                        st.write(desc)
                 
                 if st.button("查看详情", key=f"view_{species['id']}", width='stretch'):
                     st.session_state['selected_species'] = species['id']
@@ -848,6 +950,7 @@ def display_species_summary(species_list: List[Dict[str, Any]]):
     """以摘要形式显示物种"""
     for species in species_list:
         with st.expander(f"🌿 {species['species_name']} - {species.get('growth_form', '') or ''}"):
+            # 原有两列内容保持不变...
             col1, col2 = st.columns(2)
             
             with col1:
@@ -885,6 +988,11 @@ def display_species_summary(species_list: List[Dict[str, Any]]):
                 st.markdown("#### 🍎 果实特征")
                 st.write(f"**果形:** {species.get('fruit_shape', '未明确') or '未明确'}")
                 st.write(f"**果颜色:** {species.get('fruit_color', '未明确') or '未明确'}")
+                            # 新增：如果有描述，在全宽区域显示
+            desc = species.get('description', '')
+            if desc and not pd.isna(desc):
+                st.markdown("#### 📖 详细描述")
+                st.write(desc)
 
 def render_species_detail(species_id: int):
     """渲染物种详情页面"""
@@ -911,9 +1019,8 @@ def render_species_detail(species_id: int):
     </div>
     """, unsafe_allow_html=True)
     
-    # 创建标签页
-    tabs = st.tabs(["📋 基本信息", "🌱 植株特征", "🍃 叶片特征", "🌸 花序特征", "🍎 果实特征", "📊 完整数据"])
-    
+    # 创建标签页时增加一个
+    tabs = st.tabs(["📋 基本信息", "🌱 植株特征", "🍃 叶片特征", "🌸 花序特征", "🍎 果实特征", "📖 详细描述", "📊 完整数据"])
     with tabs[0]:
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -1004,8 +1111,16 @@ def render_species_detail(species_id: int):
             st.markdown("##### 🎨 果实颜色")
             st.write(f"**果颜色:** {species.get('fruit_color', '未明确') or '未明确'}")
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tabs[5]:
+    with tabs[5]:  # 新增的详细描述标签
+        st.markdown('<div class="feature-group">', unsafe_allow_html=True)
+        desc = species.get('description', '')
+        if desc and not pd.isna(desc):
+            st.markdown(desc)
+        else:
+            st.info("暂无详细描述")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with tabs[6]:
         # 显示完整数据
         st.markdown("### 📊 完整数据记录")
         
@@ -1459,6 +1574,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
