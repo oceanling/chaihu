@@ -171,7 +171,62 @@ class BupleurumMorphologyDB:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_growth_form ON bupleurum_species(growth_form)')
             
             conn.commit()
-    
+            
+        def import_descriptions_from_excel(self, df: pd.DataFrame) -> Dict[str, Any]:
+            """
+            从“柴胡表型库”DataFrame导入物种描述，更新到现有物种记录。
+            期望的DataFrame结构：至少包含两列，第一列为物种名称，第二列为详细描述。
+            如果存在第三列（英文描述），也会被合并。
+            """
+            results = {
+                'total': len(df),
+                'matched': 0,
+                'updated': 0,
+                'not_found': [],
+                'errors': []
+            }
+            
+            # 获取所有现有物种名称（用于快速匹配）
+            existing_names = {name.lower().strip(): name for name in self.get_all_species_names()}
+            
+            for idx, row in df.iterrows():
+                try:
+                    # 假设第一列是物种名称，第二列是中文描述，第四列是英文描述（根据您提供的表型库结构调整）
+                    name_cell = str(row.iloc[0]).strip()
+                    if pd.isna(name_cell) or name_cell == '':
+                        continue
+                        
+                    # 提取描述：第二列（中文） + 第四列（英文）如果有的话
+                    desc_cn = str(row.iloc[1]) if len(row) > 1 and not pd.isna(row.iloc[1]) else ''
+                    desc_en = str(row.iloc[3]) if len(row) > 3 and not pd.isna(row.iloc[3]) else ''
+                    
+                    # 合并描述，可以用分隔符分开
+                    full_description = desc_cn
+                    if desc_en:
+                        full_description += "\n\n[英文描述]\n" + desc_en
+                    
+                    # 尝试匹配物种名称
+                    matched_key = name_cell.lower().strip()
+                    if matched_key in existing_names:
+                        db_name = existing_names[matched_key]
+                        # 更新数据库中的 description 字段
+                        with self.connect() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "UPDATE bupleurum_species SET description = ? WHERE species_name = ?",
+                                (full_description, db_name)
+                            )
+                            if cursor.rowcount > 0:
+                                results['updated'] += 1
+                        results['matched'] += 1
+                    else:
+                        results['not_found'].append(name_cell)
+                        
+                except Exception as e:
+                    results['errors'].append(f"行{idx+2}: {str(e)}")
+            
+            return results    
+        
     def import_from_excel_df(self, df: pd.DataFrame) -> Dict[str, Any]:
         """从DataFrame导入Excel数据"""
         results = {
@@ -1595,6 +1650,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
