@@ -557,7 +557,7 @@ def render_species_browser():
         <p style="margin: 0; opacity: 0.9;">浏览和搜索柴胡属植物的形态特征</p>
     </div>
     """, unsafe_allow_html=True)
-    
+
     # 搜索和筛选
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -568,8 +568,8 @@ def render_species_browser():
         )
     with col2:
         search_limit = st.selectbox("显示数量", [10, 25, 50, 100], index=1)
-    
-    # 高级筛选（完全重写）
+
+    # 高级筛选（所有缩进均为4个空格）
     with st.expander("🔬 高级筛选", expanded=False):
         st.markdown("#### 植株特征")
         col1, col2, col3, col4 = st.columns(4)
@@ -581,7 +581,7 @@ def render_species_browser():
             min_height = st.number_input("最小株高(cm)", min_value=0.0, value=0.0, step=5.0, key="filter_min_height")
         with col4:
             max_height = st.number_input("最大株高(cm)", min_value=0.0, value=200.0, step=5.0, key="filter_max_height")
-        
+
         st.markdown("#### 叶片特征")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -592,7 +592,7 @@ def render_species_browser():
             min_leaf_length = st.number_input("最小叶长度(cm)", min_value=0.0, value=0.0, step=1.0, key="filter_min_leaf_length")
         with col4:
             max_leaf_length = st.number_input("最大叶长度(cm)", min_value=0.0, value=50.0, step=1.0, key="filter_max_leaf_length")
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             min_leaf_width = st.number_input("最小叶宽度(mm)", min_value=0.0, value=0.0, step=1.0, key="filter_min_leaf_width")
@@ -602,7 +602,7 @@ def render_species_browser():
             min_vein = st.number_input("最小叶脉数", min_value=0, value=0, step=1, key="filter_min_vein")
         with col4:
             max_vein = st.number_input("最大叶脉数", min_value=0, value=50, step=1, key="filter_max_vein")
-        
+
         st.markdown("#### 花序特征")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -613,7 +613,7 @@ def render_species_browser():
             bract_number = st.text_input("总苞片数量", placeholder="如：3-5", key="filter_bract_number")
         with col4:
             bract_shape = st.text_input("总苞片形状", placeholder="如：卵形", key="filter_bract_shape")
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             min_bract_length = st.number_input("最小总苞片长度(mm)", min_value=0.0, value=0.0, step=0.5, key="filter_min_bract_length")
@@ -623,7 +623,7 @@ def render_species_browser():
             ray_number = st.text_input("伞辐数量", placeholder="如：5-8", key="filter_ray_number")
         with col4:
             min_ray_length = st.number_input("最小伞辐长度(cm)", min_value=0.0, value=0.0, step=0.5, key="filter_min_ray_length")
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             max_ray_length = st.number_input("最大伞辐长度(cm)", min_value=0.0, value=20.0, step=0.5, key="filter_max_ray_length")
@@ -633,7 +633,7 @@ def render_species_browser():
             bracteole_number = st.text_input("小总苞片数量", placeholder="如：5", key="filter_bracteole_number")
         with col4:
             bracteole_shape = st.text_input("小总苞片形状", placeholder="如：线形", key="filter_bracteole_shape")
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             umbellet_number = st.text_input("小伞形花序数量", placeholder="如：10-20", key="filter_umbellet_number")
@@ -643,17 +643,17 @@ def render_species_browser():
             fruit_shape = st.text_input("果形", placeholder="如：椭圆形", key="filter_fruit_shape")
         with col4:
             fruit_color = st.text_input("果颜色", placeholder="如：褐色", key="filter_fruit_color")
-        
+
         # 筛选按钮
         if st.button("应用筛选", type="primary", width='stretch'):
             st.session_state['filters_applied'] = True
-    
-    # 构建筛选条件（从 session_state 读取所有控件的值）
+
+    # 构建筛选条件
     filters = {}
     if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
         # 植株特征
         gf = st.session_state.get('filter_growth_form', '')
-        if gf:  # 改为非空判断
+        if gf:
             filters['growth_form'] = gf
         rc = st.session_state.get('filter_root_color', '')
         if rc:
@@ -664,7 +664,7 @@ def render_species_browser():
         max_h = st.session_state.get('filter_max_height', 200.0)
         if max_h < 200.0:
             filters['max_height'] = max_h
-        
+
         # 叶片特征
         ls = st.session_state.get('filter_leaf_shape', '')
         if ls:
@@ -690,7 +690,7 @@ def render_species_browser():
         max_v = st.session_state.get('filter_max_vein', 50)
         if max_v < 50:
             filters['max_vein'] = max_v
-        
+
         # 花序特征
         min_id = st.session_state.get('filter_min_inflorescence_diameter', 0.0)
         if min_id > 0:
@@ -721,7 +721,8 @@ def render_species_browser():
             filters['max_ray_length'] = max_rl
         ud = st.session_state.get('filter_umbellet_diameter', '')
         if ud:
-            filters['umbellet_diameter'] = ud
+            # 注意：数据库列名为 umbellet_diameter_mm，不是 umbellet_diameter
+            filters['umbellet_diameter_mm'] = ud
         ben = st.session_state.get('filter_bracteole_number', '')
         if ben:
             filters['bracteole_number'] = ben
@@ -731,7 +732,7 @@ def render_species_browser():
         un = st.session_state.get('filter_umbellet_number', '')
         if un:
             filters['umbellet_number'] = un
-        
+
         # 果实特征
         pc = st.session_state.get('filter_petal_color', '')
         if pc:
@@ -742,17 +743,17 @@ def render_species_browser():
         fc = st.session_state.get('filter_fruit_color', '')
         if fc:
             filters['fruit_color'] = fc
-    
+
     # 执行搜索
     results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
-    
-    # 显示结果（以下代码保持不变）
+
+    # 显示结果
     if not results:
         st.warning("🔍 未找到匹配的物种。")
         return
-    
+
     st.success(f"✅ 找到 {len(results)} 个物种")
-    
+
     view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True)
     if view_mode == "卡片视图":
         display_species_cards(results)
@@ -1444,6 +1445,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
