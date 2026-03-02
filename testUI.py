@@ -575,7 +575,7 @@ def render_species_browser():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             growth_form = st.text_input("株型", placeholder="如：多年生草本", key="filter_growth_form")
-    with col2:
+        with col2:
             root_color = st.text_input("根颜色", placeholder="如：黄色", key="filter_root_color")
         with col3:
             min_height = st.number_input("最小株高(cm)", min_value=0.0, value=0.0, step=5.0, key="filter_min_height")
@@ -1444,6 +1444,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
