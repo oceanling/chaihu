@@ -296,18 +296,25 @@ class BupleurumMorphologyDB:
             return dict(row) if row else None
     
     def search_species(self, query: str = "", filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """搜索物种，支持文本搜索和高级筛选"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            
+    
+            # 获取表的所有列名，用于验证
+            cursor.execute("PRAGMA table_info(bupleurum_species)")
+            columns_info = cursor.fetchall()
+            valid_columns = {col[1] for col in columns_info}  # col[1] 是列名
+    
             sql = "SELECT * FROM bupleurum_species WHERE 1=1"
             params = []
-            
+    
+            # 文本搜索
             if query:
                 sql += " AND (species_name LIKE ? OR leaf_shape LIKE ? OR fruit_shape LIKE ?)"
                 search_term = f"%{query}%"
                 params.extend([search_term, search_term, search_term])
-            
-            # 数值字段映射：键名 -> (数据库列名, 操作符)
+    
+            # 数值范围字段映射：前端键名 -> (数据库列名, 操作符)
             numeric_range_map = {
                 'min_height': ('min_height_cm', '>='),
                 'max_height': ('max_height_cm', '<='),
@@ -324,19 +331,26 @@ class BupleurumMorphologyDB:
                 'min_ray_length': ('min_ray_length_cm', '>='),
                 'max_ray_length': ('max_ray_length_cm', '<=')
             }
-            
+    
             if filters:
                 for key, value in filters.items():
-                    if value is not None and value != '':
-                        if key in numeric_range_map:
-                            column, operator = numeric_range_map[key]
+                    if value is None or value == '':
+                        continue
+    
+                    if key in numeric_range_map:
+                        column, operator = numeric_range_map[key]
+                        if column in valid_columns:
                             sql += f" AND {column} {operator} ?"
                             params.append(float(value))
-                        else:
-                            # 文本字段模糊匹配
+                    else:
+                        # 文本字段模糊匹配，确保列存在
+                        if key in valid_columns:
                             sql += f" AND {key} LIKE ?"
                             params.append(f"%{value}%")
-            
+                        else:
+                            # 如果列不存在，记录警告或忽略（这里使用 st.warning 需要导入 streamlit，或者改为打印日志）
+                            print(f"忽略未知的筛选字段: {key}")
+    
             sql += " ORDER BY species_name"
             cursor.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
@@ -1445,6 +1459,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
