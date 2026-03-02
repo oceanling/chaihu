@@ -901,7 +901,28 @@ def display_species_cards(species_list: List[Dict[str, Any]]):
     for idx, species in enumerate(species_list):
         with cols[idx % len(cols)]:
             with st.container():
-                # 原有卡片内容保持不变...
+                # 计算株高范围
+                height_range = ""
+                min_height = species.get('min_height_cm')
+                max_height = species.get('max_height_cm')
+                if min_height is not None and max_height is not None:
+                    height_range = f"{min_height}-{max_height} cm"
+                elif min_height is not None:
+                    height_range = f"≥{min_height} cm"
+                elif max_height is not None:
+                    height_range = f"≤{max_height} cm"
+                
+                # 处理叶脉数
+                vein_range = ""
+                min_vein = species.get('min_vein_number')
+                max_vein = species.get('max_vein_number')
+                if min_vein is not None and max_vein is not None:
+                    vein_range = f"{min_vein}-{max_vein}"
+                elif min_vein is not None:
+                    vein_range = f"≥{min_vein}"
+                elif max_vein is not None:
+                    vein_range = f"≤{max_vein}"
+                
                 st.markdown(f"""
                 <div class="species-card">
                     <h3>{species['species_name']}</h3>
@@ -1574,6 +1595,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
