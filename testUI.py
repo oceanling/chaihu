@@ -362,7 +362,7 @@ class BupleurumMorphologyDB:
             cursor.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
             
-     def import_descriptions_from_excel(self, df: pd.DataFrame) -> Dict[str, Any]:
+    def import_descriptions_from_excel(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
         从“柴胡表型库”DataFrame导入物种描述，更新到现有物种记录。
         期望的DataFrame结构：至少包含两列，第一列为物种名称，第二列为详细描述。
@@ -381,7 +381,7 @@ class BupleurumMorphologyDB:
         
         for idx, row in df.iterrows():
             try:
-                # 假设第一列是物种名称，第二列是中文描述，第三列可能是变种信息，第四列是英文描述（可根据实际调整）
+                # 假设第一列是物种名称，第二列是中文描述，第四列是英文描述（根据您提供的表型库结构调整）
                 name_cell = str(row.iloc[0]).strip()
                 if pd.isna(name_cell) or name_cell == '':
                     continue
@@ -410,13 +410,13 @@ class BupleurumMorphologyDB:
                             results['updated'] += 1
                     results['matched'] += 1
                 else:
-                    # 如果没找到，记录未匹配的名称
                     results['not_found'].append(name_cell)
                     
             except Exception as e:
                 results['errors'].append(f"行{idx+2}: {str(e)}")
         
-        return results   
+        return results
+        
     def get_statistics(self) -> Dict[str, Any]:
         """获取数据库统计信息"""
         with self.connect() as conn:
