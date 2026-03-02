@@ -600,9 +600,8 @@ def render_data_import():
         except Exception as e:
             st.error(f"❌ 文件读取失败: {str(e)}")
             
-        st.markdown("---")   # ← 缩进与上面的代码相同（4个空格）
-    
-        # 新增：表型库导入区域
+        st.markdown("---")   # 
+            # 新增：表型库导入区域
         st.markdown("""
         <div style="background: #f0f7ff; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
             <h2 style="margin: 0; color: #2c3e50;">📖 导入表型库详细描述</h2>
@@ -1598,6 +1597,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
