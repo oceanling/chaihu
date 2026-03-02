@@ -574,9 +574,8 @@ def render_species_browser():
         st.markdown("#### 植株特征")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            growth_forms = db.get_distinct_growth_forms()
-            growth_form = st.selectbox("株型", ["全部"] + growth_forms, key="filter_growth_form")
-        with col2:
+            growth_form = st.text_input("株型", placeholder="如：多年生草本", key="filter_growth_form")
+    with col2:
             root_color = st.text_input("根颜色", placeholder="如：黄色", key="filter_root_color")
         with col3:
             min_height = st.number_input("最小株高(cm)", min_value=0.0, value=0.0, step=5.0, key="filter_min_height")
@@ -653,8 +652,8 @@ def render_species_browser():
     filters = {}
     if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
         # 植株特征
-        gf = st.session_state.get('filter_growth_form', '全部')
-        if gf and gf != '全部':
+        gf = st.session_state.get('filter_growth_form', '')
+        if gf:  # 改为非空判断
             filters['growth_form'] = gf
         rc = st.session_state.get('filter_root_color', '')
         if rc:
@@ -1445,5 +1444,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
