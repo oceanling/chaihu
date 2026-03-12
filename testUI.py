@@ -1553,10 +1553,12 @@ def main():
         2. 上传您的Excel文件（柴胡词典2.xlsx）
         3. 开始浏览和分析数据
         """)
-        
+         
         # 显示最近添加的物种
         recent_species = db.get_all_species(limit=6)
         if recent_species:
+            # 按中文在前、英文在后排序
+            recent_species.sort(key=chinese_first_key)
             st.markdown("### 📚 最近添加的物种")
             display_species_cards(recent_species)
     
@@ -1581,6 +1583,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
