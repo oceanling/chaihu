@@ -13,7 +13,17 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
+# 中文优先排序
+def chinese_first_key(species):
+    """排序键：纯中文/中文为主的名称返回0，含英文的返回1"""
+    name = species.get('species_name', '')
+    # 简单判断：如果名称包含任何ASCII字母（A-Z a-z），则认为含英文
+    import re
+    if re.search(r'[A-Za-z]', name):
+        return 1
+    else:
+        return 0
+        
 # 自定义CSS样式
 def load_custom_css():
     st.markdown("""
@@ -593,16 +603,15 @@ def render_data_import():
         except Exception as e:
             st.error(f"❌ 文件读取失败: {str(e)}")
             
-        st.markdown("---")   # 
-            # 新增：表型库导入区域
-        st.markdown("""
+    st.markdown("---")  # 缩进4空格
+    with st.expander("📖 导入表型库详细描述（点击展开）", expanded=False):  # 缩进4空格
+        st.markdown("""  # 缩进8空格
         <div style="background: #f0f7ff; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
-            <h2 style="margin: 0; color: #2c3e50;">📖 导入表型库详细描述</h2>
-            <p style="margin: 0; color: #7f8c8d;">上传《柴胡表型库2.1.xlsx》，将详细描述添加到现有物种记录中</p>
+            ...
         </div>
         """, unsafe_allow_html=True)
         
-        uploaded_desc_file = st.file_uploader(
+        uploaded_desc_file = st.file_uploader(  # 缩进8空格
             "选择表型库Excel文件", 
             type=['xlsx', 'xls'], 
             key="desc_uploader"
@@ -852,7 +861,8 @@ def render_species_browser():
 
     # 执行搜索（需修改 search_species 方法以支持这些新键）
     results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
-
+    # 按中文在前、英文在后排序
+    results.sort(key=chinese_first_key)
     # 显示结果
     if not results:
         st.warning("🔍 未找到匹配的物种。")
@@ -860,13 +870,14 @@ def render_species_browser():
 
     st.success(f"✅ 找到 {len(results)} 个物种")
 
-    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True)
+    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True，index=2)  # 默认选中摘要视图
     if view_mode == "卡片视图":
         display_species_cards(results)
     elif view_mode == "表格视图":
         display_species_table(results)
     else:
         display_species_summary(results)
+        
 
 
 def display_species_cards(species_list: List[Dict[str, Any]]):
@@ -1570,6 +1581,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
