@@ -870,7 +870,7 @@ def render_species_browser():
 
     st.success(f"✅ 找到 {len(results)} 个物种")
 
-    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True，index=2)  # 默认选中摘要视图
+    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True, index=2)  # 默认选中摘要视图
     if view_mode == "卡片视图":
         display_species_cards(results)
     elif view_mode == "表格视图":
@@ -1581,6 +1581,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
