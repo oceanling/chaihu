@@ -716,6 +716,7 @@ def render_species_browser():
             max_height = st.number_input("最大株高(cm)", min_value=0.0, value=200.0, step=5.0, key="filter_max_height")
 
         st.markdown("#### 叶片特征")
+        # 第一行：叶形、叶颜色、叶长度范围（保持原样）
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             leaf_shape = st.text_input("叶形", placeholder="如：线形、披针形", key="filter_leaf_shape")
@@ -726,15 +727,23 @@ def render_species_browser():
         with col4:
             max_leaf_length = st.number_input("最大叶长度(cm)", min_value=0.0, value=50.0, step=1.0, key="filter_max_leaf_length")
 
+        # 第二行：合并叶宽度，叶脉数保持原样（两列）
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            min_leaf_width = st.number_input("最小叶宽度(mm)", min_value=0.0, value=0.0, step=1.0, key="filter_min_leaf_width")
+            # 合并叶宽度：用一个markdown作为总标签，内部分两列输入最小/最大值
+            st.markdown("**叶宽度 (mm)**")
+            inner_col1, inner_col2 = st.columns(2)
+            with inner_col1:
+                min_leaf_width = st.number_input("最小", min_value=0.0, value=0.0, step=1.0, key="filter_min_leaf_width", label_visibility="collapsed")
+            with inner_col2:
+                max_leaf_width = st.number_input("最大", min_value=0.0, value=50.0, step=1.0, key="filter_max_leaf_width", label_visibility="collapsed")
         with col2:
-            max_leaf_width = st.number_input("最大叶宽度(mm)", min_value=0.0, value=50.0, step=1.0, key="filter_max_leaf_width")
-        with col3:
             min_vein = st.number_input("最小叶脉数", min_value=0, value=0, step=1, key="filter_min_vein")
-        with col4:
+        with col3:
             max_vein = st.number_input("最大叶脉数", min_value=0, value=50, step=1, key="filter_max_vein")
+        with col4:
+            # 第四列留空，保持四列布局对齐
+            st.markdown("")
 
         st.markdown("#### 花序特征")
         col1, col2, col3, col4 = st.columns(4)
@@ -781,7 +790,7 @@ def render_species_browser():
         if st.button("应用筛选", type="primary", width='stretch'):
             st.session_state['filters_applied'] = True
 
-    # 构建筛选条件
+    # 构建筛选条件（此部分代码不变，仍使用 session_state 中的键）
     filters = {}
     if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
         # 植株特征
@@ -877,7 +886,7 @@ def render_species_browser():
         if fc:
             filters['fruit_color'] = fc
 
-    # 执行搜索
+     # 执行搜索
     results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
 
     # 显示结果
@@ -1597,6 +1606,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
