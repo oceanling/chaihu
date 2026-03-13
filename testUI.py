@@ -683,215 +683,216 @@ def render_data_import():
         except Exception as e:
             st.error(f"❌ 导出失败: {str(e)}")
 
-def render_species_browser():
-        # 定义清除所有筛选条件的函数
-    def clear_all_filters():
-        """清除所有以 'filter_' 开头的 session_state 变量"""
-        for key in list(st.session_state.keys()):
-            if key.startswith('filter_'):
-                st.session_state[key] = None  # 数字输入框接受 None，文本输入框会显示为空
-        st.session_state['filters_applied'] = False
-        
-    st.markdown("...")  # 原有样式不变
-
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        search_query = st.text_input("搜索物种", placeholder="输入物种名称、叶形、果形等关键词...", key="search_query")
-    with col2:
-        search_limit = st.selectbox("显示数量", [10, 25, 50, 100], index=1)
-
-    with st.expander("🔬 高级筛选", expanded=False):
-        st.markdown("#### 植株特征")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            growth_form = st.text_input("株型", placeholder="如：多年生草本", key="filter_growth_form")
-        with col2:
-            root_color = st.text_input("根颜色", placeholder="如：黄色", key="filter_root_color")
-        with col3:
-            # 株高合并为单值输入
-            height = st.number_input("株高 (cm)", min_value=0.0, value=None, step=5.0, key="filter_height")
-        with col4:
-            # 占位，保持布局
-            st.markdown("")
-
-        st.markdown("#### 叶片特征")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            leaf_shape = st.text_input("叶形", placeholder="如：线形、披针形", key="filter_leaf_shape")
-        with col2:
-            leaf_color = st.text_input("叶颜色", placeholder="如：绿色", key="filter_leaf_color")
-        with col3:
-            # 叶长度合并
-            leaf_length = st.number_input("叶长度 (cm)", min_value=0.0, value=None, step=1.0, key="filter_leaf_length")
-        with col4:
-            # 叶宽度合并
-            leaf_width = st.number_input("叶宽度 (mm)", min_value=0.0, value=None, step=1.0, key="filter_leaf_width")
-
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            # 叶脉数合并
-            vein_number = st.number_input("叶脉数", min_value=0, value=None, step=1, key="filter_vein_number")
-        with col2:
-            # 占位
-            st.markdown("")
-        with col3:
-            # 花序直径合并
-            inflorescence_diameter = st.number_input("花序直径 (cm)", min_value=0.0, value=None, step=0.5, key="filter_inflorescence_diameter")
-        with col4:
-            # 伞辐长度合并
-            ray_length = st.number_input("伞辐长度 (cm)", min_value=0.0, value=None, step=0.5, key="filter_ray_length")
-
-        st.markdown("#### 总苞片特征")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            bract_number = st.text_input("总苞片数量", placeholder="如：3-5", key="filter_bract_number")
-        with col2:
-            bract_shape = st.text_input("总苞片形状", placeholder="如：卵形", key="filter_bract_shape")
-        with col3:
-            # 总苞片长度合并
-            bract_length = st.number_input("总苞片长度 (mm)", min_value=0.0, value=None, step=0.5, key="filter_bract_length")
-        with col4:
-            # 其他字段保持原样
-            ray_number = st.text_input("伞辐数量", placeholder="如：5-8", key="filter_ray_number")
-
-        # 其他字段（小总苞片、花瓣颜色、果形等）保持不变，此处省略...
-
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
-        with col_btn1:
-            if st.button("应用筛选", type="primary", use_container_width=True):
-                st.session_state['filters_applied'] = True
-        with col_btn2:
-            if st.button("清除所有条件", type="secondary", use_container_width=True):
-                clear_all_filters()
-                st.rerun()  # 立即刷新页面，使所有输入框恢复为空
-        # col_btn3 留空以平衡布局
+    def render_species_browser():
+        """渲染物种浏览页面"""
+        # 初始化重置版本号
+        if 'filter_reset_version' not in st.session_state:
+            st.session_state.filter_reset_version = 0
     
-    # 构建筛选条件
-    filters = {}
-    if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
-        # 文本字段（略）...
-
-        # 数值范围字段（使用新键）
-        h = st.session_state.get('filter_height')
-        if h is not None:
-            filters['height'] = h
-        ll = st.session_state.get('filter_leaf_length')
-        if ll is not None:
-            filters['leaf_length'] = ll
-        lw = st.session_state.get('filter_leaf_width')
-        if lw is not None:
-            filters['leaf_width'] = lw
-        vn = st.session_state.get('filter_vein_number')
-        if vn is not None:
-            filters['vein_number'] = vn
-        idm = st.session_state.get('filter_inflorescence_diameter')
-        if idm is not None:
-            filters['inflorescence_diameter'] = idm
-        rl = st.session_state.get('filter_ray_length')
-        if rl is not None:
-            filters['ray_length'] = rl
-        bl = st.session_state.get('filter_bract_length')
-        if bl is not None:
-            filters['bract_length'] = bl
-
-        # 叶片特征
-        ls = st.session_state.get('filter_leaf_shape', '')
-        if ls:
-            filters['leaf_shape'] = ls
-        lc = st.session_state.get('filter_leaf_color', '')
-        if lc:
-            filters['leaf_color'] = lc
-        min_ll = st.session_state.get('filter_min_leaf_length', 0.0)
-        if min_ll > 0:
-            filters['min_leaf_length'] = min_ll
-        max_ll = st.session_state.get('filter_max_leaf_length', 50.0)
-        if max_ll < 50.0:
-            filters['max_leaf_length'] = max_ll
-        min_lw = st.session_state.get('filter_min_leaf_width', 0.0)
-        if min_lw > 0:
-            filters['min_leaf_width'] = min_lw
-        max_lw = st.session_state.get('filter_max_leaf_width', 50.0)
-        if max_lw < 50.0:
-            filters['max_leaf_width'] = max_lw
-        min_v = st.session_state.get('filter_min_vein', 0)
-        if min_v > 0:
-            filters['min_vein'] = min_v
-        max_v = st.session_state.get('filter_max_vein', 50)
-        if max_v < 50:
-            filters['max_vein'] = max_v
-
-        # 花序特征
-        min_id = st.session_state.get('filter_min_inflorescence_diameter', 0.0)
-        if min_id > 0:
-            filters['min_inflorescence_diameter'] = min_id
-        max_id = st.session_state.get('filter_max_inflorescence_diameter', 20.0)
-        if max_id < 20.0:
-            filters['max_inflorescence_diameter'] = max_id
-        bn = st.session_state.get('filter_bract_number', '')
-        if bn:
-            filters['bract_number'] = bn
-        bs = st.session_state.get('filter_bract_shape', '')
-        if bs:
-            filters['bract_shape'] = bs
-        min_bl = st.session_state.get('filter_min_bract_length', 0.0)
-        if min_bl > 0:
-            filters['min_bract_length'] = min_bl
-        max_bl = st.session_state.get('filter_max_bract_length', 20.0)
-        if max_bl < 20.0:
-            filters['max_bract_length'] = max_bl
-        rn = st.session_state.get('filter_ray_number', '')
-        if rn:
-            filters['ray_number'] = rn
-        min_rl = st.session_state.get('filter_min_ray_length', 0.0)
-        if min_rl > 0:
-            filters['min_ray_length'] = min_rl
-        max_rl = st.session_state.get('filter_max_ray_length', 20.0)
-        if max_rl < 20.0:
-            filters['max_ray_length'] = max_rl
-        ud = st.session_state.get('filter_umbellet_diameter', '')
-        if ud:
-            # 注意：数据库列名为 umbellet_diameter_mm，不是 umbellet_diameter
-            filters['umbellet_diameter_mm'] = ud
-        ben = st.session_state.get('filter_bracteole_number', '')
-        if ben:
-            filters['bracteole_number'] = ben
-        bes = st.session_state.get('filter_bracteole_shape', '')
-        if bes:
-            filters['bracteole_shape'] = bes
-        un = st.session_state.get('filter_umbellet_number', '')
-        if un:
-            filters['umbellet_number'] = un
-
-        # 果实特征
-        pc = st.session_state.get('filter_petal_color', '')
-        if pc:
-            filters['petal_color'] = pc
-        fs = st.session_state.get('filter_fruit_shape', '')
-        if fs:
-            filters['fruit_shape'] = fs
-        fc = st.session_state.get('filter_fruit_color', '')
-        if fc:
-            filters['fruit_color'] = fc
-
-
-    # 执行搜索（需修改 search_species 方法以支持这些新键）
-    results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
-    # 按中文在前、英文在后排序
-    results.sort(key=chinese_first_key)
-    # 显示结果
-    if not results:
-        st.warning("🔍 未找到匹配的物种。")
-        return
-
-    st.success(f"✅ 找到 {len(results)} 个物种")
-
-    view_mode = st.radio("显示模式", ["卡片视图", "表格视图", "摘要视图"], horizontal=True, index=2)  # 默认选中摘要视图
-    if view_mode == "卡片视图":
-        display_species_cards(results)
-    elif view_mode == "表格视图":
-        display_species_table(results)
-    else:
-        display_species_summary(results)
+        # 辅助函数：生成动态key
+        def dynamic_key(base):
+            return f"{base}_v{st.session_state.filter_reset_version}"
+    
+        # 清除所有筛选条件的函数
+        def clear_all_filters():
+            st.session_state.filter_reset_version += 1
+            st.rerun()
+    
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); 
+                    color: #2c3e50; padding: 1.5rem; border-radius: 10px; margin-bottom: 1rem;">
+            <h2 style="margin: 0;">🔍 物种浏览与搜索</h2>
+            <p style="margin: 0; opacity: 0.9;">浏览和搜索柴胡属植物的形态特征</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+        # 搜索和筛选
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            search_query = st.text_input(
+                "搜索物种", 
+                placeholder="输入物种名称、叶形、果形等关键词...",
+                key=dynamic_key("search_query")
+            )
+        with col2:
+            search_limit = st.selectbox("显示数量", [10, 25, 50, 100], index=1, key=dynamic_key("search_limit"))
+    
+        # 高级筛选
+        with st.expander("🔬 高级筛选", expanded=False):
+            st.markdown("#### 植株特征")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                growth_form = st.text_input("株型", placeholder="如：多年生草本", key=dynamic_key("filter_growth_form"))
+            with col2:
+                root_color = st.text_input("根颜色", placeholder="如：黄色", key=dynamic_key("filter_root_color"))
+            with col3:
+                height = st.number_input("株高 (cm)", min_value=0.0, value=None, step=5.0, key=dynamic_key("filter_height"))
+            with col4:
+                st.markdown("")
+    
+            st.markdown("#### 叶片特征")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                leaf_shape = st.text_input("叶形", placeholder="如：线形、披针形", key=dynamic_key("filter_leaf_shape"))
+            with col2:
+                leaf_color = st.text_input("叶颜色", placeholder="如：绿色", key=dynamic_key("filter_leaf_color"))
+            with col3:
+                leaf_length = st.number_input("叶长度 (cm)", min_value=0.0, value=None, step=1.0, key=dynamic_key("filter_leaf_length"))
+            with col4:
+                leaf_width = st.number_input("叶宽度 (mm)", min_value=0.0, value=None, step=1.0, key=dynamic_key("filter_leaf_width"))
+    
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                vein_number = st.number_input("叶脉数", min_value=0, value=None, step=1, key=dynamic_key("filter_vein_number"))
+            with col2:
+                st.markdown("")
+            with col3:
+                inflorescence_diameter = st.number_input("花序直径 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_inflorescence_diameter"))
+            with col4:
+                ray_length = st.number_input("伞辐长度 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_ray_length"))
+    
+            st.markdown("#### 总苞片特征")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                bract_number = st.text_input("总苞片数量", placeholder="如：3-5", key=dynamic_key("filter_bract_number"))
+            with col2:
+                bract_shape = st.text_input("总苞片形状", placeholder="如：卵形", key=dynamic_key("filter_bract_shape"))
+            with col3:
+                bract_length = st.number_input("总苞片长度 (mm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_bract_length"))
+            with col4:
+                ray_number = st.text_input("伞辐数量", placeholder="如：5-8", key=dynamic_key("filter_ray_number"))
+    
+            # 其他特征（请根据您的实际代码补充，这里仅作示例）
+            st.markdown("#### 其他特征")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                umbellet_diameter = st.text_input("小伞形花序直径(mm)", placeholder="如：2-5", key=dynamic_key("filter_umbellet_diameter"))
+            with col2:
+                bracteole_number = st.text_input("小总苞片数量", placeholder="如：5", key=dynamic_key("filter_bracteole_number"))
+            with col3:
+                bracteole_shape = st.text_input("小总苞片形状", placeholder="如：线形", key=dynamic_key("filter_bracteole_shape"))
+            with col4:
+                umbellet_number = st.text_input("小伞形花序数量", placeholder="如：10-20", key=dynamic_key("filter_umbellet_number"))
+    
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                petal_color = st.text_input("花瓣颜色", placeholder="如：黄色", key=dynamic_key("filter_petal_color"))
+            with col2:
+                fruit_shape = st.text_input("果形", placeholder="如：椭圆形", key=dynamic_key("filter_fruit_shape"))
+            with col3:
+                fruit_color = st.text_input("果颜色", placeholder="如：褐色", key=dynamic_key("filter_fruit_color"))
+            with col4:
+                st.markdown("")
+    
+            # 按钮区域
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+            with col_btn1:
+                if st.button("应用筛选", type="primary", use_container_width=True):
+                    st.session_state['filters_applied'] = True
+            with col_btn2:
+                if st.button("清除所有条件", type="secondary", use_container_width=True):
+                    clear_all_filters()
+            # col_btn3 留空
+    
+        # 构建筛选条件（使用动态key从session_state取值）
+        filters = {}
+        if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
+            # 植株特征
+            gf = st.session_state.get(dynamic_key("filter_growth_form"))
+            if gf:
+                filters['growth_form'] = gf
+            rc = st.session_state.get(dynamic_key("filter_root_color"))
+            if rc:
+                filters['root_color'] = rc
+            h = st.session_state.get(dynamic_key("filter_height"))
+            if h is not None:
+                filters['height'] = h
+    
+            # 叶片特征
+            ls = st.session_state.get(dynamic_key("filter_leaf_shape"))
+            if ls:
+                filters['leaf_shape'] = ls
+            lc = st.session_state.get(dynamic_key("filter_leaf_color"))
+            if lc:
+                filters['leaf_color'] = lc
+            ll = st.session_state.get(dynamic_key("filter_leaf_length"))
+            if ll is not None:
+                filters['leaf_length'] = ll
+            lw = st.session_state.get(dynamic_key("filter_leaf_width"))
+            if lw is not None:
+                filters['leaf_width'] = lw
+            vn = st.session_state.get(dynamic_key("filter_vein_number"))
+            if vn is not None:
+                filters['vein_number'] = vn
+            idm = st.session_state.get(dynamic_key("filter_inflorescence_diameter"))
+            if idm is not None:
+                filters['inflorescence_diameter'] = idm
+            rl = st.session_state.get(dynamic_key("filter_ray_length"))
+            if rl is not None:
+                filters['ray_length'] = rl
+    
+            # 总苞片特征
+            bn = st.session_state.get(dynamic_key("filter_bract_number"))
+            if bn:
+                filters['bract_number'] = bn
+            bs = st.session_state.get(dynamic_key("filter_bract_shape"))
+            if bs:
+                filters['bract_shape'] = bs
+            bl = st.session_state.get(dynamic_key("filter_bract_length"))
+            if bl is not None:
+                filters['bract_length'] = bl
+            rn = st.session_state.get(dynamic_key("filter_ray_number"))
+            if rn:
+                filters['ray_number'] = rn
+    
+            # 其他特征（根据您的实际字段补充）
+            ud = st.session_state.get(dynamic_key("filter_umbellet_diameter"))
+            if ud:
+                filters['umbellet_diameter_mm'] = ud  # 注意数据库列名
+            ben = st.session_state.get(dynamic_key("filter_bracteole_number"))
+            if ben:
+                filters['bracteole_number'] = ben
+            bes = st.session_state.get(dynamic_key("filter_bracteole_shape"))
+            if bes:
+                filters['bracteole_shape'] = bes
+            un = st.session_state.get(dynamic_key("filter_umbellet_number"))
+            if un:
+                filters['umbellet_number'] = un
+            pc = st.session_state.get(dynamic_key("filter_petal_color"))
+            if pc:
+                filters['petal_color'] = pc
+            fs = st.session_state.get(dynamic_key("filter_fruit_shape"))
+            if fs:
+                filters['fruit_shape'] = fs
+            fc = st.session_state.get(dynamic_key("filter_fruit_color"))
+            if fc:
+                filters['fruit_color'] = fc
+    
+        # 执行搜索
+        results = db.search_species(search_query, filters) if search_query or filters else db.get_all_species(search_limit)
+        # 按中文优先排序
+        results.sort(key=chinese_first_key)
+    
+        # 显示结果
+        if not results:
+            st.warning("🔍 未找到匹配的物种。")
+            return
+    
+        st.success(f"✅ 找到 {len(results)} 个物种")
+    
+        view_mode = st.radio(
+            "显示模式", 
+            ["卡片视图", "表格视图", "摘要视图"], 
+            horizontal=True,
+            index=2,  # 默认摘要视图
+            key=dynamic_key("view_mode")
+        )
+        if view_mode == "卡片视图":
+            display_species_cards(results)
+        elif view_mode == "表格视图":
+            display_species_table(results)
+        else:
+            display_species_summary(results)
         
 
 
@@ -1598,6 +1599,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
