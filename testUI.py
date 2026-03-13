@@ -684,6 +684,14 @@ def render_data_import():
             st.error(f"❌ 导出失败: {str(e)}")
 
 def render_species_browser():
+        # 定义清除所有筛选条件的函数
+    def clear_all_filters():
+        """清除所有以 'filter_' 开头的 session_state 变量"""
+        for key in list(st.session_state.keys()):
+            if key.startswith('filter_'):
+                st.session_state[key] = None  # 数字输入框接受 None，文本输入框会显示为空
+        st.session_state['filters_applied'] = False
+        
     st.markdown("...")  # 原有样式不变
 
     col1, col2 = st.columns([3, 1])
@@ -748,9 +756,16 @@ def render_species_browser():
 
         # 其他字段（小总苞片、花瓣颜色、果形等）保持不变，此处省略...
 
-        if st.button("应用筛选", type="primary", width='stretch'):
-            st.session_state['filters_applied'] = True
-
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+        with col_btn1:
+            if st.button("应用筛选", type="primary", use_container_width=True):
+                st.session_state['filters_applied'] = True
+        with col_btn2:
+            if st.button("清除所有条件", type="secondary", use_container_width=True):
+                clear_all_filters()
+                st.rerun()  # 立即刷新页面，使所有输入框恢复为空
+        # col_btn3 留空以平衡布局
+    
     # 构建筛选条件
     filters = {}
     if 'filters_applied' in st.session_state and st.session_state['filters_applied']:
@@ -1583,6 +1598,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
