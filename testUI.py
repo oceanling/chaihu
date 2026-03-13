@@ -343,11 +343,6 @@ class BupleurumMorphologyDB:
                 'bract_length': ('min_bract_length_mm', 'max_bract_length_mm')
             }
     
-            # 数值范围字段映射（保留原有）
-            numeric_range_map = {
-                # 如果需要，可保留原有范围键，但建议统一使用单值范围
-            }
-    
             if filters:
                 for key, value in filters.items():
                     if value is None or value == '':
@@ -356,14 +351,9 @@ class BupleurumMorphologyDB:
                     if key in single_range_map:
                         col_min, col_max = single_range_map[key]
                         if col_min in valid_columns and col_max in valid_columns:
-                            # 关键修改：使用 OR NULL 处理缺失值
+                            # 处理 NULL 值：如果某一端缺失，则忽略该端限制
                             sql += f" AND ({col_min} <= ? OR {col_min} IS NULL) AND ({col_max} >= ? OR {col_max} IS NULL)"
                             params.extend([float(value), float(value)])
-                    elif key in numeric_range_map:
-                        column, operator = numeric_range_map[key]
-                        if column in valid_columns:
-                            sql += f" AND {column} {operator} ?"
-                            params.append(float(value))
                     else:
                         # 文本字段模糊匹配
                         if key in valid_columns:
@@ -1593,6 +1583,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
