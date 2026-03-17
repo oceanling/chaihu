@@ -340,6 +340,7 @@ class BupleurumMorphologyDB:
                 'inflorescence_diameter': ('min_inflorescence_diameter_cm', 'max_inflorescence_diameter_cm'),
                 'ray_length': ('min_ray_length_cm', 'max_ray_length_cm'),
                 'bract_length': ('min_bract_length_cm', 'max_bract_length_cm')
+                'umbellet_diameter': ('umbellet_diameter_min_cm', 'umbellet_diameter_max_cm'),
             }
     
             if filters:
