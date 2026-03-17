@@ -193,6 +193,7 @@ class BupleurumMorphologyDB:
             
       
     def import_from_excel_df(self, df: pd.DataFrame) -> Dict[str, Any]:
+        st.write("上传文件的列名：", list(df.columns))
         results = {'total': len(df), 'success': 0, 'failed': 0, 'errors': [], 'duplicates': 0}
         existing_species = self.get_all_species_names()
         
@@ -261,7 +262,7 @@ class BupleurumMorphologyDB:
         
     def _parse_numeric(self, value: str) -> Optional[float]:
         """解析数值，处理范围、未明确等情况"""
-        if not value or value.lower() in ['未明确', 'nan',  'na', '']:
+        if not value or value.lower() in ['未明确', 'nan', 'na', 'NA','']:
             return None
         
         # 处理范围值如 "3-8"
@@ -601,7 +602,10 @@ def render_data_import():
                     st.rerun()
         
         except Exception as e:
-            st.error(f"❌ 文件读取失败: {str(e)}")
+            import traceback
+            error_detail = traceback.format_exc()
+            results['errors'].append(f"{species_name}: {str(e)}\n{error_detail}")
+            results['failed'] += 1
             
     st.markdown("---")  # 缩进4空格
     with st.expander("📖 导入表型库详细描述（点击展开）", expanded=False):  # 缩进4空格
