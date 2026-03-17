@@ -260,24 +260,35 @@ class BupleurumMorphologyDB:
 
         return results
         
-    def _parse_numeric(self, value: str) -> Optional[float]:
-        """解析数值，处理范围、未明确等情况"""
-        if not value or value.lower() in ['未明确', 'nan', 'na', 'NA','']:
+    def _parse_numeric(self, value):
+        """解析数值，处理范围、未明确等情况，兼容字符串和数字类型"""
+        # 处理空值（None, NaN, 空字符串等）
+        if pd.isna(value) or value is None:
             return None
         
-        # 处理范围值如 "3-8"
-        if '-' in value:
-            parts = value.split('-')
+        # 如果是字符串，清理前后空格并转小写
+        if isinstance(value, str):
+            s = value.strip()
+            if s == '' or s.lower() in ['未明确', 'nan', 'na', '--', 'null']:
+                return None
+            # 处理范围值如 "3-8"，返回最小值（可根据需要调整）
+            if '-' in s:
+                parts = s.split('-')
+                try:
+                    return float(parts[0].strip())
+                except:
+                    return None
+            # 尝试转换为浮点数
             try:
-                return float(parts[0].strip())
+                return float(s)
             except:
                 return None
-        
-        # 处理单个数值
-        try:
-            return float(value.strip())
-        except:
-            return None
+        else:
+            # 非字符串（如整数、浮点数），直接尝试转换为 float
+            try:
+                return float(value)
+            except:
+                return None
     
     def _parse_integer(self, value: str) -> Optional[int]:
         """解析整数值"""
