@@ -572,11 +572,19 @@ def render_data_import():
                 st.success(f"✅ 成功读取文件，共发现 {len(df)} 条记录")
                 
                 # 导入确认
-                if st.button("🚀 开始导入数据", type="primary", width='stretch'):
-                    with st.spinner("正在导入数据..."):
-                        result = db.import_from_excel_df(df)
-                    
-                    # 显示导入结果
+                # 使用表单防止自动刷新
+                with st.form(key="import_form"):
+                    submitted = st.form_submit_button("🚀 开始导入数据", type="primary", use_container_width=True)
+                    if submitted:
+                        with st.spinner("正在导入数据..."):
+                            result = db.import_from_excel_df(df)
+                        # 将结果保存到 session_state 中，以便持久显示
+                        st.session_state['import_result'] = result
+                        st.rerun()  # 重新运行以显示结果
+                
+                # 如果有保存的导入结果，则显示
+                if 'import_result' in st.session_state:
+                    result = st.session_state['import_result']
                     st.markdown("### 📊 导入结果")
                     
                     col1, col2, col3, col4 = st.columns(4)
@@ -598,8 +606,10 @@ def render_data_import():
                             for error in result['errors']:
                                 st.write(f"- {error}")
                     
-                    # 更新统计信息
-                    st.rerun()
+                    # 添加一个按钮清除结果
+                    if st.button("清除结果", key="clear_import_result"):
+                        del st.session_state['import_result']
+                        st.rerun()
         
         except Exception as e:
             import traceback
