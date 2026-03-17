@@ -848,7 +848,7 @@ def render_species_browser():
         # 其他特征（根据您的实际字段补充）
         ud = st.session_state.get(dynamic_key("filter_umbellet_diameter"))
         if ud:
-            filters['umbellet_diameter_cm'] = ud  # 注意数据库列名
+            filters['umbellet_diameter'] = ud  # 注意数据库列名
         ben = st.session_state.get(dynamic_key("filter_bracteole_number"))
         if ben:
             filters['bracteole_number'] = ben
