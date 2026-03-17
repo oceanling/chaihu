@@ -560,7 +560,7 @@ def render_data_import():
             st.write(f"- 列名: {list(df.columns)}")
             
             # 检查必需字段
-            required_fields = ['物种', '株型']
+            required_fields = ['物种名称', '株型']
             missing_fields = [field for field in required_fields if field not in df.columns]
             
             if missing_fields:
