@@ -137,34 +137,43 @@ class BupleurumMorphologyDB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 serial_number INTEGER,
                 species_name TEXT NOT NULL,
+                is_subspecies TEXT,                -- 是否亚种
+                original_species TEXT,              -- 原种名称
+                subspecies_no TEXT,                 -- 亚种编号
                 growth_form TEXT,
                 min_height_cm REAL,
                 max_height_cm REAL,
                 root_color TEXT,
-                leaf_max_length_cm REAL,
-                leaf_min_length_cm REAL,
-                leaf_min_width_mm REAL,
-                leaf_max_width_mm REAL,
                 leaf_shape TEXT,
+                leaf_position TEXT,                 -- 叶位置
+                leaf_min_length_cm REAL,
+                leaf_max_length_cm REAL,
+                leaf_min_width_cm REAL,              -- 注意单位改为厘米
+                leaf_max_width_cm REAL,
                 leaf_color TEXT,
                 min_vein_number INTEGER,
                 max_vein_number INTEGER,
+                leaf_unique_features TEXT,           -- 叶独特特征
+                plant_features TEXT,                 -- 植株特征
+                fruit_features TEXT,                  -- 果实特征
                 min_inflorescence_diameter_cm REAL,
                 max_inflorescence_diameter_cm REAL,
                 bract_number TEXT,
                 bract_shape TEXT,
-                min_bract_length_mm REAL,
-                max_bract_length_mm REAL,
+                min_bract_length_cm REAL,             -- 单位改为厘米
+                max_bract_length_cm REAL,
                 ray_number TEXT,
                 min_ray_length_cm REAL,
                 max_ray_length_cm REAL,
-                umbellet_diameter_mm TEXT,
+                umbellet_diameter_min_cm REAL,        -- 拆分为最小/最大
+                umbellet_diameter_max_cm REAL,
                 bracteole_number TEXT,
                 bracteole_shape TEXT,
                 umbellet_number TEXT,
                 petal_color TEXT,
                 fruit_shape TEXT,
                 fruit_color TEXT,
+                description TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             ''')
@@ -184,82 +193,72 @@ class BupleurumMorphologyDB:
             
       
     def import_from_excel_df(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """从DataFrame导入Excel数据"""
-        results = {
-            'total': len(df),
-            'success': 0,
-            'failed': 0,
-            'errors': [],
-            'duplicates': 0
-        }
-        
-        # 获取已存在的物种名称，用于去重
+        results = {'total': len(df), 'success': 0, 'failed': 0, 'errors': [], 'duplicates': 0}
         existing_species = self.get_all_species_names()
         
         for idx, row in df.iterrows():
             try:
-                # 跳过表头行
-                if idx == 0:
-                    continue
-                    
-                # 检查必需字段
-                species_name = str(row.get('物种', '')).strip()
+                species_name = str(row.get('物种名称', '')).strip()
                 if not species_name or species_name == 'nan':
                     results['failed'] += 1
                     results['errors'].append(f"行{idx+1}: 物种名称为空")
                     continue
-                
-                # 检查是否已存在
                 if species_name in existing_species:
                     results['duplicates'] += 1
                     continue
-                
-                # 准备数据 - 处理所有字段
+
                 species_data = {
-                    'serial_number': int(row.get('序号', 0)) if pd.notna(row.get('序号')) else 0,
+                    'serial_number': self._parse_integer(row.get('序号')),
                     'species_name': species_name,
-                    'growth_form': str(row.get('株型', '')).strip() if pd.notna(row.get('株型')) else '',
-                    'min_height_cm': self._parse_numeric(str(row.get('最小株高(厘米)', ''))),
-                    'max_height_cm': self._parse_numeric(str(row.get('最大株高(厘米)', ''))),
-                    'root_color': str(row.get('根颜色', '')).strip() if pd.notna(row.get('根颜色')) else '',
-                    'leaf_max_length_cm': self._parse_numeric(str(row.get('叶最大长度(厘米)', ''))),
-                    'leaf_min_length_cm': self._parse_numeric(str(row.get('叶最小长度(厘米)', ''))),
-                    'leaf_min_width_mm': self._parse_numeric(str(row.get('叶最小宽度(毫米)', ''))),
-                    'leaf_max_width_mm': self._parse_numeric(str(row.get('叶最大宽度(毫米)', ''))),
-                    'leaf_shape': str(row.get('叶形', '')).strip() if pd.notna(row.get('叶形')) else '',
-                    'leaf_color': str(row.get('叶颜色', '')).strip() if pd.notna(row.get('叶颜色')) else '',
-                    'min_vein_number': self._parse_integer(str(row.get('最小叶脉数', ''))),
-                    'max_vein_number': self._parse_integer(str(row.get('最大叶脉数', ''))),
-                    'min_inflorescence_diameter_cm': self._parse_numeric(str(row.get('最小花序直径(厘米)', ''))),
-                    'max_inflorescence_diameter_cm': self._parse_numeric(str(row.get('最大花序直径(厘米)', ''))),
-                    'bract_number': str(row.get('总苞片数量', '')).strip() if pd.notna(row.get('总苞片数量')) else '',
-                    'bract_shape': str(row.get('总苞片形状', '')).strip() if pd.notna(row.get('总苞片形状')) else '',
-                    'min_bract_length_mm': self._parse_numeric(str(row.get('总苞片最小长度(毫米)', ''))),
-                    'max_bract_length_mm': self._parse_numeric(str(row.get('总苞片最大长度(毫米)', ''))),
-                    'ray_number': str(row.get('伞辐数量', '')).strip() if pd.notna(row.get('伞辐数量')) else '',
-                    'min_ray_length_cm': self._parse_numeric(str(row.get('最小伞辐长度(厘米)', ''))),
-                    'max_ray_length_cm': self._parse_numeric(str(row.get('最大伞辐长度(厘米)', ''))),
-                    'umbellet_diameter_mm': str(row.get('小伞形花序直径(毫米)', '')).strip() if pd.notna(row.get('小伞形花序直径(毫米)')) else '',
-                    'bracteole_number': str(row.get('小总苞片数量', '')).strip() if pd.notna(row.get('小总苞片数量')) else '',
-                    'bracteole_shape': str(row.get('小总苞片形状', '')).strip() if pd.notna(row.get('小总苞片形状')) else '',
-                    'umbellet_number': str(row.get('小伞形花序数量', '')).strip() if pd.notna(row.get('小伞形花序数量')) else '',
-                    'petal_color': str(row.get('花瓣颜色', '')).strip() if pd.notna(row.get('花瓣颜色')) else '',
-                    'fruit_shape': str(row.get('果形状', '')).strip() if pd.notna(row.get('果形状')) else '',
-                    'fruit_color': str(row.get('果颜色', '')).strip() if pd.notna(row.get('果颜色')) else ''
+                    'is_subspecies': str(row.get('是否亚种', '')).strip(),
+                    'original_species': str(row.get('原种名称', '')).strip(),
+                    'subspecies_no': str(row.get('亚种编号', '')).strip(),
+                    'growth_form': str(row.get('株型', '')).strip(),
+                    'min_height_cm': self._parse_numeric(row.get('最小株高')),
+                    'max_height_cm': self._parse_numeric(row.get('最大株高')),
+                    'root_color': str(row.get('根颜色', '')).strip(),
+                    'leaf_shape': str(row.get('叶形', '')).strip(),
+                    'leaf_position': str(row.get('叶位置', '')).strip(),
+                    'leaf_min_length_cm': self._parse_numeric(row.get('叶最小长度_cm')),
+                    'leaf_max_length_cm': self._parse_numeric(row.get('叶最大长度_cm')),
+                    'leaf_min_width_cm': self._parse_numeric(row.get('叶最小宽度_cm')),
+                    'leaf_max_width_cm': self._parse_numeric(row.get('叶最大宽度_cm')),
+                    'leaf_color': str(row.get('叶颜色', '')).strip(),
+                    'min_vein_number': self._parse_integer(row.get('最小叶脉数')),
+                    'max_vein_number': self._parse_integer(row.get('最大叶脉数')),
+                    'leaf_unique_features': str(row.get('叶独特特征', '')).strip(),
+                    'plant_features': str(row.get('植株特征', '')).strip(),
+                    'fruit_features': str(row.get('果实特征', '')).strip(),
+                    'min_inflorescence_diameter_cm': self._parse_numeric(row.get('最小花序直径_cm')),
+                    'max_inflorescence_diameter_cm': self._parse_numeric(row.get('最大花序直径_cm')),
+                    'bract_number': str(row.get('总苞片数量', '')).strip(),
+                    'bract_shape': str(row.get('总苞片形状', '')).strip(),
+                    'min_bract_length_cm': self._parse_numeric(row.get('总苞片最小长度_cm')),
+                    'max_bract_length_cm': self._parse_numeric(row.get('总苞片最大长度_cm')),
+                    'ray_number': str(row.get('伞幅数量', '')).strip(),   # 注意是“幅”不是“辐”
+                    'min_ray_length_cm': self._parse_numeric(row.get('最小伞幅长度_cm')),
+                    'max_ray_length_cm': self._parse_numeric(row.get('最大伞幅长度_cm')),
+                    'umbellet_diameter_min_cm': self._parse_numeric(row.get('小伞形花序直径_min_cm')),
+                    'umbellet_diameter_max_cm': self._parse_numeric(row.get('小伞形花序直径_max_cm')),
+                    'bracteole_number': str(row.get('小总苞片数量', '')).strip(),
+                    'bracteole_shape': str(row.get('小总苞片形状', '')).strip(),
+                    'umbellet_number': str(row.get('小伞形花序数量', '')).strip(),
+                    'petal_color': str(row.get('花瓣颜色', '')).strip(),
+                    'fruit_shape': str(row.get('果形状', '')).strip(),
+                    'fruit_color': str(row.get('果颜色', '')).strip()
                 }
-                
-                # 插入数据
+
                 self._add_species(species_data)
                 results['success'] += 1
                 existing_species.add(species_name)
-                
+
             except Exception as e:
                 results['failed'] += 1
-                species_name = str(row.get('物种', f"行{idx+1}")).strip()
+                species_name = str(row.get('物种名称', f"行{idx+1}")).strip()
                 results['errors'].append(f"{species_name}: {str(e)}")
-        
+
         return results
-    
+        
     def _parse_numeric(self, value: str) -> Optional[float]:
         """解析数值，处理范围、未明确等情况"""
         if not value or value.lower() in ['未明确', 'nan', '']:
@@ -336,11 +335,11 @@ class BupleurumMorphologyDB:
             single_range_map = {
                 'height': ('min_height_cm', 'max_height_cm'),
                 'leaf_length': ('leaf_min_length_cm', 'leaf_max_length_cm'),
-                'leaf_width': ('leaf_min_width_mm', 'leaf_max_width_mm'),
+                'leaf_width': ('leaf_min_width_cm', 'leaf_max_width_cm'),
                 'vein_number': ('min_vein_number', 'max_vein_number'),
                 'inflorescence_diameter': ('min_inflorescence_diameter_cm', 'max_inflorescence_diameter_cm'),
                 'ray_length': ('min_ray_length_cm', 'max_ray_length_cm'),
-                'bract_length': ('min_bract_length_mm', 'max_bract_length_mm')
+                'bract_length': ('min_bract_length_cm', 'max_bract_length_cm')
             }
     
             if filters:
@@ -524,7 +523,7 @@ def render_data_import():
     9. **叶脉数** - 叶脉数量范围
     10. **花序直径** - 花序尺寸
     11. **总苞片特征** - 数量、形状、尺寸
-    12. **伞辐特征** - 数量、长度
+    12. **伞幅特征** - 数量、长度
     13. **小伞形花序特征** - 直径、数量
     14. **小总苞片特征** - 数量、形状
     15. **花瓣颜色** - 花色
@@ -739,7 +738,7 @@ def render_species_browser():
         with col3:
             leaf_length = st.number_input("叶长度 (cm)", min_value=0.0, value=None, step=1.0, key=dynamic_key("filter_leaf_length"))
         with col4:
-            leaf_width = st.number_input("叶宽度 (mm)", min_value=0.0, value=None, step=1.0, key=dynamic_key("filter_leaf_width"))
+            leaf_width = st.number_input("叶宽度 (cm)", min_value=0.0, value=None, step=1.0, key=dynamic_key("filter_leaf_width"))
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -749,7 +748,7 @@ def render_species_browser():
         with col3:
             inflorescence_diameter = st.number_input("花序直径 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_inflorescence_diameter"))
         with col4:
-            ray_length = st.number_input("伞辐长度 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_ray_length"))
+            ray_length = st.number_input("伞幅长度 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_ray_length"))
 
         st.markdown("#### 总苞片特征")
         col1, col2, col3, col4 = st.columns(4)
@@ -758,15 +757,15 @@ def render_species_browser():
         with col2:
             bract_shape = st.text_input("总苞片形状", placeholder="如：卵形", key=dynamic_key("filter_bract_shape"))
         with col3:
-            bract_length = st.number_input("总苞片长度 (mm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_bract_length"))
+            bract_length = st.number_input("总苞片长度 (cm)", min_value=0.0, value=None, step=0.5, key=dynamic_key("filter_bract_length"))
         with col4:
-            ray_number = st.text_input("伞辐数量", placeholder="如：5-8", key=dynamic_key("filter_ray_number"))
+            ray_number = st.text_input("伞幅数量", placeholder="如：5-8", key=dynamic_key("filter_ray_number"))
 
         # 其他特征（请根据您的实际代码补充，这里仅作示例）
         st.markdown("#### 其他特征")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            umbellet_diameter = st.text_input("小伞形花序直径(mm)", placeholder="如：2-5", key=dynamic_key("filter_umbellet_diameter"))
+            umbellet_diameter = st.text_input("小伞形花序直径(cm)", placeholder="如：2-5", key=dynamic_key("filter_umbellet_diameter"))
         with col2:
             bracteole_number = st.text_input("小总苞片数量", placeholder="如：5", key=dynamic_key("filter_bracteole_number"))
         with col3:
@@ -848,7 +847,7 @@ def render_species_browser():
         # 其他特征（根据您的实际字段补充）
         ud = st.session_state.get(dynamic_key("filter_umbellet_diameter"))
         if ud:
-            filters['umbellet_diameter_mm'] = ud  # 注意数据库列名
+            filters['umbellet_diameter_cm'] = ud  # 注意数据库列名
         ben = st.session_state.get(dynamic_key("filter_bracteole_number"))
         if ben:
             filters['bracteole_number'] = ben
@@ -987,9 +986,9 @@ def display_species_summary(species_list: List[Dict[str, Any]]):
                 st.write(f"**叶形:** {species.get('leaf_shape', '未明确') or '未明确'}")
                 leaf_min_len = species.get('leaf_min_length_cm')
                 leaf_max_len = species.get('leaf_max_length_cm')
-                leaf_min_wid = species.get('leaf_min_width_mm')
-                leaf_max_wid = species.get('leaf_max_width_mm')
-                leaf_size_text = f"{leaf_min_len}-{leaf_max_len} cm × {leaf_min_wid}-{leaf_max_wid} mm" if all(v is not None for v in [leaf_min_len, leaf_max_len, leaf_min_wid, leaf_max_wid]) else '未明确'
+                leaf_min_wid = species.get('leaf_min_width_cm')
+                leaf_max_wid = species.get('leaf_max_width_cm')
+                leaf_size_text = f"{leaf_min_len}-{leaf_max_len} cm × {leaf_min_wid}-{leaf_max_wid} cm" if all(v is not None for v in [leaf_min_len, leaf_max_len, leaf_min_wid, leaf_max_wid]) else '未明确'
                 st.write(f"**叶尺寸:** {leaf_size_text}")
                 st.write(f"**叶颜色:** {species.get('leaf_color', '未明确') or '未明确'}")
                 min_vein = species.get('min_vein_number')
@@ -1003,9 +1002,9 @@ def display_species_summary(species_list: List[Dict[str, Any]]):
                 max_inflorescence = species.get('max_inflorescence_diameter_cm')
                 inflorescence_text = f"{min_inflorescence}-{max_inflorescence} cm" if min_inflorescence is not None and max_inflorescence is not None else '未明确'
                 st.write(f"**花序直径:** {inflorescence_text}")
-                st.write(f"**总苞片:** {species.get('bract_number', '') or ''}个, {species.get('bract_shape', '') or ''}, {species.get('min_bract_length_mm', '')}-{species.get('max_bract_length_mm', '')} mm")
-                st.write(f"**伞辐:** {species.get('ray_number', '') or ''}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
-                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_mm', '') or ''} mm, {species.get('umbellet_number', '') or ''}个")
+                st.write(f"**总苞片:** {species.get('bract_number', '') or ''}个, {species.get('bract_shape', '') or ''}, {species.get('min_bract_length_cm', '')}-{species.get('max_bract_length_cm', '')} cm")
+                st.write(f"**伞幅:** {species.get('ray_number', '') or ''}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
+                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_cm', '') or ''} cm, {species.get('umbellet_number', '') or ''}个")
                 
                 st.markdown("#### 🍎 果实特征")
                 st.write(f"**果形:** {species.get('fruit_shape', '未明确') or '未明确'}")
@@ -1076,8 +1075,8 @@ def render_species_detail(species_id: int):
             st.markdown("##### 📐 叶片尺寸")
             st.write(f"**最小长度:** {species.get('leaf_min_length_cm', '未明确') or '未明确'} cm")
             st.write(f"**最大长度:** {species.get('leaf_max_length_cm', '未明确') or '未明确'} cm")
-            st.write(f"**最小宽度:** {species.get('leaf_min_width_mm', '未明确') or '未明确'} mm")
-            st.write(f"**最大宽度:** {species.get('leaf_max_width_mm', '未明确') or '未明确'} mm")
+            st.write(f"**最小宽度:** {species.get('leaf_min_width_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大宽度:** {species.get('leaf_max_width_cm', '未明确') or '未明确'} cm")
         
         with col2:
             st.markdown("##### 🎨 叶片特征")
@@ -1100,11 +1099,11 @@ def render_species_detail(species_id: int):
             st.markdown("##### 🍃 总苞片")
             st.write(f"**数量:** {species.get('bract_number', '未明确') or '未明确'}")
             st.write(f"**形状:** {species.get('bract_shape', '未明确') or '未明确'}")
-            st.write(f"**最小长度:** {species.get('min_bract_length_mm', '未明确') or '未明确'} mm")
-            st.write(f"**最大长度:** {species.get('max_bract_length_mm', '未明确') or '未明确'} mm")
+            st.write(f"**最小长度:** {species.get('min_bract_length_cm', '未明确') or '未明确'} cm")
+            st.write(f"**最大长度:** {species.get('max_bract_length_cm', '未明确') or '未明确'} cm")
         
         with col3:
-            st.markdown("##### ☂️ 伞辐特征")
+            st.markdown("##### ☂️ 伞幅特征")
             st.write(f"**数量:** {species.get('ray_number', '未明确') or '未明确'}")
             st.write(f"**最小长度:** {species.get('min_ray_length_cm', '未明确') or '未明确'} cm")
             st.write(f"**最大长度:** {species.get('max_ray_length_cm', '未明确') or '未明确'} cm")
@@ -1114,7 +1113,7 @@ def render_species_detail(species_id: int):
         col4, col5 = st.columns(2)
         with col4:
             st.markdown("##### 🌼 小伞形花序")
-            st.write(f"**直径:** {species.get('umbellet_diameter_mm', '未明确') or '未明确'} mm")
+            st.write(f"**直径:** {species.get('umbellet_diameter_cm', '未明确') or '未明确'} cm")
             st.write(f"**数量:** {species.get('umbellet_number', '未明确') or '未明确'}")
         
         with col5:
@@ -1151,28 +1150,36 @@ def render_species_detail(species_id: int):
             ("ID", species['id']),
             ("序号", species.get('serial_number', '')),
             ("物种名称", species['species_name']),
+            ("是否亚种", species.get('is_subspecies', '')),
+            ("原种名称", species.get('original_species', '')),
+            ("亚种编号", species.get('subspecies_no', '')),
             ("株型", species.get('growth_form', '')),
             ("最小株高(cm)", species.get('min_height_cm', '')),
             ("最大株高(cm)", species.get('max_height_cm', '')),
             ("根颜色", species.get('root_color', '')),
-            ("叶最大长度(cm)", species.get('leaf_max_length_cm', '')),
-            ("叶最小长度(cm)", species.get('leaf_min_length_cm', '')),
-            ("叶最小宽度(mm)", species.get('leaf_min_width_mm', '')),
-            ("叶最大宽度(mm)", species.get('leaf_max_width_mm', '')),
             ("叶形", species.get('leaf_shape', '')),
+            ("叶位置", species.get('leaf_position', '')),
+            ("叶最小长度(cm)", species.get('leaf_min_length_cm', '')),
+            ("叶最大长度(cm)", species.get('leaf_max_length_cm', '')),
+            ("叶最小宽度(cm)", species.get('leaf_min_width_cm', '')),   # 原为 mm
+            ("叶最大宽度(cm)", species.get('leaf_max_width_cm', '')),
             ("叶颜色", species.get('leaf_color', '')),
             ("最小叶脉数", species.get('min_vein_number', '')),
             ("最大叶脉数", species.get('max_vein_number', '')),
+            ("叶独特特征", species.get('leaf_unique_features', '')),
+            ("植株特征", species.get('plant_features', '')),
+            ("果实特征", species.get('fruit_features', '')),
             ("最小花序直径(cm)", species.get('min_inflorescence_diameter_cm', '')),
             ("最大花序直径(cm)", species.get('max_inflorescence_diameter_cm', '')),
             ("总苞片数量", species.get('bract_number', '')),
             ("总苞片形状", species.get('bract_shape', '')),
-            ("总苞片最小长度(mm)", species.get('min_bract_length_mm', '')),
-            ("总苞片最大长度(mm)", species.get('max_bract_length_mm', '')),
+            ("总苞片最小长度(cm)", species.get('min_bract_length_cm', '')),   # 原为 mm
+            ("总苞片最大长度(cm)", species.get('max_bract_length_cm', '')),
             ("伞辐数量", species.get('ray_number', '')),
             ("最小伞辐长度(cm)", species.get('min_ray_length_cm', '')),
             ("最大伞辐长度(cm)", species.get('max_ray_length_cm', '')),
-            ("小伞形花序直径(mm)", species.get('umbellet_diameter_mm', '')),
+            ("小伞形花序最小直径(cm)", species.get('umbellet_diameter_min_cm', '')),   # 新增
+            ("小伞形花序最大直径(cm)", species.get('umbellet_diameter_max_cm', '')),
             ("小总苞片数量", species.get('bracteole_number', '')),
             ("小总苞片形状", species.get('bracteole_shape', '')),
             ("小伞形花序数量", species.get('umbellet_number', '')),
@@ -1598,7 +1605,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
