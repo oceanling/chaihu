@@ -261,7 +261,7 @@ class BupleurumMorphologyDB:
         
     def _parse_numeric(self, value: str) -> Optional[float]:
         """解析数值，处理范围、未明确等情况"""
-        if not value or value.lower() in ['未明确', 'nan', '']:
+        if not value or value.lower() in ['未明确', 'nan',  'na', '']:
             return None
         
         # 处理范围值如 "3-8"
@@ -1004,7 +1004,18 @@ def display_species_summary(species_list: List[Dict[str, Any]]):
                 st.write(f"**花序直径:** {inflorescence_text}")
                 st.write(f"**总苞片:** {species.get('bract_number', '') or ''}个, {species.get('bract_shape', '') or ''}, {species.get('min_bract_length_cm', '')}-{species.get('max_bract_length_cm', '')} cm")
                 st.write(f"**伞幅:** {species.get('ray_number', '') or ''}个, {species.get('min_ray_length_cm', '')}-{species.get('max_ray_length_cm', '')} cm")
-                st.write(f"**小伞形花序:** 直径{species.get('umbellet_diameter_cm', '') or ''} cm, {species.get('umbellet_number', '') or ''}个")
+                # 处理小伞形花序直径范围
+                min_d = species.get('umbellet_diameter_min_cm')
+                max_d = species.get('umbellet_diameter_max_cm')
+                if min_d is not None and max_d is not None:
+                    dia_text = f"{min_d}-{max_d} cm"
+                elif min_d is not None:
+                    dia_text = f"≥{min_d} cm"
+                elif max_d is not None:
+                    dia_text = f"≤{max_d} cm"
+                else:
+                    dia_text = "未明确"
+                st.write(f"**小伞形花序:** 直径{dia_text}, {species.get('umbellet_number', '') or ''}个")
                 
                 st.markdown("#### 🍎 果实特征")
                 st.write(f"**果形:** {species.get('fruit_shape', '未明确') or '未明确'}")
