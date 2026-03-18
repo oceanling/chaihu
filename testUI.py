@@ -142,8 +142,8 @@ class BupleurumMorphologyDB:
             )
             
             # 创建SQLAlchemy引擎，用于pandas操作
-            connection_string = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_database}"
-            self.engine = create_engine(connection_string)
+            #connection_string = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_database}"
+            #self.engine = create_engine(connection_string)
             
             return self.conn
         except Exception as e:
@@ -411,11 +411,10 @@ class BupleurumMorphologyDB:
             conn.commit()
     
     def export_to_excel(self) -> pd.DataFrame:
-        # 使用 SQLAlchemy 引擎
-        if self.engine is None:
-            self.connect()  # 确保 engine 已创建
-        df = pd.read_sql_query("SELECT * FROM bupleurum_species ORDER BY species_name", self.engine)
-        return df
+        with self.connect() as conn:
+            # 使用 pandas 的 read_sql 直接使用 pymysql 连接
+            df = pd.read_sql("SELECT * FROM bupleurum_species ORDER BY species_name", conn)
+            return df
 
 # 初始化数据库
 @st.cache_resource
