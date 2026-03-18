@@ -1,0 +1,6 @@
+[mysql]
+host = "82.157.168.147"
+port = 3306
+user = "bupleurum_app"
+password = "您设置的强密码"
+database = "bupleurum_db"
