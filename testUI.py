@@ -5,6 +5,9 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 import io
 import re
+import pymysql
+from sqlalchemy import create_engine
+import streamlit as st
 
 # 设置页面配置
 st.set_page_config(
@@ -113,242 +116,231 @@ def load_custom_css():
 load_custom_css()
 
 class BupleurumMorphologyDB:
-    """柴胡形态特征数据库管理类"""
+    """柴胡形态特征数据库管理类 - 连接腾讯云MySQL版本"""
     
-    def __init__(self, db_path='bupleurum_morphology.db'):
-        self.db_path = db_path
+    def __init__(self):
         self.conn = None
-        self.initialize_database()
+        self.engine = None
     
     def connect(self):
-        """连接到数据库"""
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
-        return self.conn
+        """连接到腾讯云 MySQL 数据库"""
+        try:
+            db_host = st.secrets["mysql"]["host"]
+            db_port = st.secrets["mysql"]["port"]
+            db_user = st.secrets["mysql"]["user"]
+            db_password = st.secrets["mysql"]["password"]
+            db_database = st.secrets["mysql"]["database"]
+            
+            self.conn = pymysql.connect(
+                host=db_host,
+                port=int(db_port),
+                user=db_user,
+                password=db_password,
+                database=db_database,
+                charset='utf8mb4',
+                cursorclass=pymysql.cursors.DictCursor
+            )
+            
+            # 创建SQLAlchemy引擎，用于pandas操作
+            connection_string = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_database}"
+            self.engine = create_engine(connection_string)
+            
+            return self.conn
+        except Exception as e:
+            st.error(f"数据库连接失败: {str(e)}")
+            return None
     
     def initialize_database(self):
-        """初始化数据库表 - 根据Excel结构设计"""
+        """初始化数据库表（仅在首次部署时执行一次）"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            
-            # 创建主表（如果不存在）
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS bupleurum_species (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
                 serial_number INTEGER,
-                species_name TEXT NOT NULL,
-                is_subspecies TEXT,                -- 是否亚种
-                original_species TEXT,              -- 原种名称
-                subspecies_no TEXT,                 -- 亚种编号
-                growth_form TEXT,
-                min_height_cm REAL,
-                max_height_cm REAL,
-                root_color TEXT,
-                leaf_shape TEXT,
-                leaf_position TEXT,                 -- 叶位置
-                leaf_min_length_cm REAL,
-                leaf_max_length_cm REAL,
-                leaf_min_width_cm REAL,              -- 注意单位改为厘米
-                leaf_max_width_cm REAL,
-                leaf_color TEXT,
+                species_name VARCHAR(255) NOT NULL,
+                is_subspecies VARCHAR(50),
+                original_species VARCHAR(255),
+                subspecies_no VARCHAR(50),
+                growth_form VARCHAR(100),
+                min_height_cm FLOAT,
+                max_height_cm FLOAT,
+                root_color VARCHAR(100),
+                leaf_shape VARCHAR(100),
+                leaf_position VARCHAR(100),
+                leaf_min_length_cm FLOAT,
+                leaf_max_length_cm FLOAT,
+                leaf_min_width_cm FLOAT,
+                leaf_max_width_cm FLOAT,
+                leaf_color VARCHAR(100),
                 min_vein_number INTEGER,
                 max_vein_number INTEGER,
-                leaf_unique_features TEXT,           -- 叶独特特征
-                plant_features TEXT,                 -- 植株特征
-                fruit_features TEXT,                  -- 果实特征
-                min_inflorescence_diameter_cm REAL,
-                max_inflorescence_diameter_cm REAL,
-                bract_number TEXT,
-                bract_shape TEXT,
-                min_bract_length_cm REAL,             -- 单位改为厘米
-                max_bract_length_cm REAL,
-                ray_number TEXT,
-                min_ray_length_cm REAL,
-                max_ray_length_cm REAL,
-                umbellet_diameter_min_cm REAL,        -- 拆分为最小/最大
-                umbellet_diameter_max_cm REAL,
-                bracteole_number TEXT,
-                bracteole_shape TEXT,
-                umbellet_number TEXT,
-                petal_color TEXT,
-                fruit_shape TEXT,
-                fruit_color TEXT,
+                leaf_unique_features TEXT,
+                plant_features TEXT,
+                fruit_features TEXT,
+                min_inflorescence_diameter_cm FLOAT,
+                max_inflorescence_diameter_cm FLOAT,
+                bract_number VARCHAR(100),
+                bract_shape VARCHAR(100),
+                min_bract_length_cm FLOAT,
+                max_bract_length_cm FLOAT,
+                ray_number VARCHAR(100),
+                min_ray_length_cm FLOAT,
+                max_ray_length_cm FLOAT,
+                umbellet_diameter_min_cm FLOAT,
+                umbellet_diameter_max_cm FLOAT,
+                bracteole_number VARCHAR(100),
+                bracteole_shape VARCHAR(100),
+                umbellet_number VARCHAR(100),
+                petal_color VARCHAR(100),
+                fruit_shape VARCHAR(100),
+                fruit_color VARCHAR(100),
                 description TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             ''')
             
-            # 检查并添加 description 字段（如果不存在）
-            cursor.execute("PRAGMA table_info(bupleurum_species)")
-            columns = [col[1] for col in cursor.fetchall()]
-            if 'description' not in columns:
-                cursor.execute("ALTER TABLE bupleurum_species ADD COLUMN description TEXT")
-                print("字段 'description' 已添加到数据库表。")
-            
-            # 创建索引（保持不变）
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_species_name ON bupleurum_species(species_name)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_growth_form ON bupleurum_species(growth_form)')
-            
             conn.commit()
-            
-      
+    
     def import_from_excel_df(self, df: pd.DataFrame) -> Dict[str, Any]:
         st.write("上传文件的列名：", list(df.columns))
         results = {'total': len(df), 'success': 0, 'failed': 0, 'errors': [], 'duplicates': 0}
         existing_species = self.get_all_species_names()
         
-        for idx, row in df.iterrows():
-            try:
-                species_name = str(row.get('物种名称', '')).strip()
-                if not species_name or species_name == 'nan':
+        # 注意：需要先连接数据库，在with块内使用cursor
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            for idx, row in df.iterrows():
+                try:
+                    species_name = str(row.get('物种名称', '')).strip()
+                    if not species_name or species_name == 'nan':
+                        results['failed'] += 1
+                        results['errors'].append(f"行{idx+1}: 物种名称为空")
+                        continue
+                    if species_name in existing_species:
+                        results['duplicates'] += 1
+                        continue
+
+                    species_data = {
+                        'serial_number': self._parse_integer(row.get('序号')),
+                        'species_name': species_name,
+                        'is_subspecies': str(row.get('是否亚种', '')).strip(),
+                        'original_species': str(row.get('原种名称', '')).strip(),
+                        'subspecies_no': str(row.get('亚种编号', '')).strip(),
+                        'growth_form': str(row.get('株型', '')).strip(),
+                        'min_height_cm': self._parse_numeric(row.get('最小株高')),
+                        'max_height_cm': self._parse_numeric(row.get('最大株高')),
+                        'root_color': str(row.get('根颜色', '')).strip(),
+                        'leaf_shape': str(row.get('叶形', '')).strip(),
+                        'leaf_position': str(row.get('叶位置', '')).strip(),
+                        'leaf_min_length_cm': self._parse_numeric(row.get('叶最小长度_cm')),
+                        'leaf_max_length_cm': self._parse_numeric(row.get('叶最大长度_cm')),
+                        'leaf_min_width_cm': self._parse_numeric(row.get('叶最小宽度_cm')),
+                        'leaf_max_width_cm': self._parse_numeric(row.get('叶最大宽度_cm')),
+                        'leaf_color': str(row.get('叶颜色', '')).strip(),
+                        'min_vein_number': self._parse_integer(row.get('最小叶脉数')),
+                        'max_vein_number': self._parse_integer(row.get('最大叶脉数')),
+                        'leaf_unique_features': str(row.get('叶独特特征', '')).strip(),
+                        'plant_features': str(row.get('植株特征', '')).strip(),
+                        'fruit_features': str(row.get('果实特征', '')).strip(),
+                        'min_inflorescence_diameter_cm': self._parse_numeric(row.get('最小花序直径_cm')),
+                        'max_inflorescence_diameter_cm': self._parse_numeric(row.get('最大花序直径_cm')),
+                        'bract_number': str(row.get('总苞片数量', '')).strip(),
+                        'bract_shape': str(row.get('总苞片形状', '')).strip(),
+                        'min_bract_length_cm': self._parse_numeric(row.get('总苞片最小长度_cm')),
+                        'max_bract_length_cm': self._parse_numeric(row.get('总苞片最大长度_cm')),
+                        'ray_number': str(row.get('伞幅数量', '')).strip(),
+                        'min_ray_length_cm': self._parse_numeric(row.get('最小伞幅长度_cm')),
+                        'max_ray_length_cm': self._parse_numeric(row.get('最大伞幅长度_cm')),
+                        'umbellet_diameter_min_cm': self._parse_numeric(row.get('小伞形花序直径_min_cm')),
+                        'umbellet_diameter_max_cm': self._parse_numeric(row.get('小伞形花序直径_max_cm')),
+                        'bracteole_number': str(row.get('小总苞片数量', '')).strip(),
+                        'bracteole_shape': str(row.get('小总苞片形状', '')).strip(),
+                        'umbellet_number': str(row.get('小伞形花序数量', '')).strip(),
+                        'petal_color': str(row.get('花瓣颜色', '')).strip(),
+                        'fruit_shape': str(row.get('果形状', '')).strip(),
+                        'fruit_color': str(row.get('果颜色', '')).strip()
+                    }
+
+                    columns = list(species_data.keys())
+                    placeholders = ['%s'] * len(columns)  # 改为 %s
+                    values = list(species_data.values())
+                    
+                    sql = f"INSERT INTO bupleurum_species ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+                    cursor.execute(sql, values)
+                    
+                    results['success'] += 1
+                    existing_species.add(species_name)
+
+                except Exception as e:
                     results['failed'] += 1
-                    results['errors'].append(f"行{idx+1}: 物种名称为空")
-                    continue
-                if species_name in existing_species:
-                    results['duplicates'] += 1
-                    continue
-
-                species_data = {
-                    'serial_number': self._parse_integer(row.get('序号')),
-                    'species_name': species_name,
-                    'is_subspecies': str(row.get('是否亚种', '')).strip(),
-                    'original_species': str(row.get('原种名称', '')).strip(),
-                    'subspecies_no': str(row.get('亚种编号', '')).strip(),
-                    'growth_form': str(row.get('株型', '')).strip(),
-                    'min_height_cm': self._parse_numeric(row.get('最小株高')),
-                    'max_height_cm': self._parse_numeric(row.get('最大株高')),
-                    'root_color': str(row.get('根颜色', '')).strip(),
-                    'leaf_shape': str(row.get('叶形', '')).strip(),
-                    'leaf_position': str(row.get('叶位置', '')).strip(),
-                    'leaf_min_length_cm': self._parse_numeric(row.get('叶最小长度_cm')),
-                    'leaf_max_length_cm': self._parse_numeric(row.get('叶最大长度_cm')),
-                    'leaf_min_width_cm': self._parse_numeric(row.get('叶最小宽度_cm')),
-                    'leaf_max_width_cm': self._parse_numeric(row.get('叶最大宽度_cm')),
-                    'leaf_color': str(row.get('叶颜色', '')).strip(),
-                    'min_vein_number': self._parse_integer(row.get('最小叶脉数')),
-                    'max_vein_number': self._parse_integer(row.get('最大叶脉数')),
-                    'leaf_unique_features': str(row.get('叶独特特征', '')).strip(),
-                    'plant_features': str(row.get('植株特征', '')).strip(),
-                    'fruit_features': str(row.get('果实特征', '')).strip(),
-                    'min_inflorescence_diameter_cm': self._parse_numeric(row.get('最小花序直径_cm')),
-                    'max_inflorescence_diameter_cm': self._parse_numeric(row.get('最大花序直径_cm')),
-                    'bract_number': str(row.get('总苞片数量', '')).strip(),
-                    'bract_shape': str(row.get('总苞片形状', '')).strip(),
-                    'min_bract_length_cm': self._parse_numeric(row.get('总苞片最小长度_cm')),
-                    'max_bract_length_cm': self._parse_numeric(row.get('总苞片最大长度_cm')),
-                    'ray_number': str(row.get('伞幅数量', '')).strip(),   # 注意是“幅”不是“辐”
-                    'min_ray_length_cm': self._parse_numeric(row.get('最小伞幅长度_cm')),
-                    'max_ray_length_cm': self._parse_numeric(row.get('最大伞幅长度_cm')),
-                    'umbellet_diameter_min_cm': self._parse_numeric(row.get('小伞形花序直径_min_cm')),
-                    'umbellet_diameter_max_cm': self._parse_numeric(row.get('小伞形花序直径_max_cm')),
-                    'bracteole_number': str(row.get('小总苞片数量', '')).strip(),
-                    'bracteole_shape': str(row.get('小总苞片形状', '')).strip(),
-                    'umbellet_number': str(row.get('小伞形花序数量', '')).strip(),
-                    'petal_color': str(row.get('花瓣颜色', '')).strip(),
-                    'fruit_shape': str(row.get('果形状', '')).strip(),
-                    'fruit_color': str(row.get('果颜色', '')).strip()
-                }
-
-                self._add_species(species_data)
-                results['success'] += 1
-                existing_species.add(species_name)
-
-            except Exception as e:
-                results['failed'] += 1
-                species_name = str(row.get('物种名称', f"行{idx+1}")).strip()
-                results['errors'].append(f"{species_name}: {str(e)}")
-
+                    species_name = str(row.get('物种名称', f"行{idx+1}")).strip()
+                    results['errors'].append(f"{species_name}: {str(e)}")
+            
+            conn.commit()  # 显式提交事务
         return results
-        
+    
+    # 数值解析方法（完全不变）
     def _parse_numeric(self, value):
-        """解析数值，处理范围、未明确等情况，兼容字符串和数字类型"""
-        # 处理空值（None, NaN）
         if pd.isna(value) or value is None:
             return None
-    
-        # 如果是数字类型（int/float），直接转换
         if isinstance(value, (int, float)):
             try:
                 return float(value)
             except:
                 return None
-    
-        # 如果是字符串
         if isinstance(value, str):
             s = value.strip()
-            # 空字符串或缺失标记
-            if s == '' or s in ['未明确', 'nan', 'na', '--', 'null']:  # 注意：不转小写
+            if s == '' or s in ['未明确', 'nan', 'na', '--', 'null']:
                 return None
-            # 处理范围值如 "3-8"
             if '-' in s:
                 parts = s.split('-')
                 try:
                     return float(parts[0].strip())
                 except:
                     return None
-            # 尝试转换为浮点数
             try:
                 return float(s)
             except:
                 return None
-    
-        # 其他类型（如布尔等），忽略
         return None
     
-    def _parse_integer(self, value: str) -> Optional[int]:
-        """解析整数值"""
+    def _parse_integer(self, value):
         num = self._parse_numeric(value)
         return int(num) if num is not None else None
     
-    def _add_species(self, species_data: Dict[str, Any]) -> int:
-        """添加物种到数据库"""
-        with self.connect() as conn:
-            cursor = conn.cursor()
-            
-            columns = list(species_data.keys())
-            placeholders = ['?'] * len(columns)
-            values = list(species_data.values())
-            
-            sql = f"INSERT INTO bupleurum_species ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-            cursor.execute(sql, values)
-            conn.commit()
-            return cursor.lastrowid
+    # 注意：以下所有方法都需要修改占位符和结果访问方式
     
     def get_all_species(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """获取所有物种"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT * FROM bupleurum_species ORDER BY species_name LIMIT ?", (limit,))
-            return [dict(row) for row in cursor.fetchall()]
+            cursor.execute("SELECT * FROM bupleurum_species ORDER BY species_name LIMIT %s", (limit,))
+            return cursor.fetchall()
     
     def get_species_by_name(self, name: str) -> Optional[Dict[str, Any]]:
-        """根据名称获取物种"""
         with self.connect() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bupleurum_species WHERE species_name = ?", (name,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
+            cursor.execute("SELECT * FROM bupleurum_species WHERE species_name = %s", (name,))
+            return cursor.fetchone()
     
     def search_species(self, query: str = "", filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """搜索物种，支持文本搜索和高级筛选"""
         with self.connect() as conn:
             cursor = conn.cursor()
-    
-            # 获取表的所有列名，用于验证
-            cursor.execute("PRAGMA table_info(bupleurum_species)")
-            columns_info = cursor.fetchall()
-            valid_columns = {col[1] for col in columns_info}
-    
+            
+            # 获取表的所有列名（保持不变）
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'bupleurum_species'")
+            valid_columns = {row['COLUMN_NAME'] for row in cursor.fetchall()}
+            
             sql = "SELECT * FROM bupleurum_species WHERE 1=1"
             params = []
-    
-            # 文本搜索
+            
             if query:
-                sql += " AND (species_name LIKE ? OR leaf_shape LIKE ? OR fruit_shape LIKE ?)"
+                sql += " AND (species_name LIKE %s OR leaf_shape LIKE %s OR fruit_shape LIKE %s)"
                 search_term = f"%{query}%"
                 params.extend([search_term, search_term, search_term])
-    
-            # 单值范围字段映射：前端键名 -> (最小列名, 最大列名)
+            
             single_range_map = {
                 'height': ('min_height_cm', 'max_height_cm'),
                 'leaf_length': ('leaf_min_length_cm', 'leaf_max_length_cm'),
@@ -359,101 +351,39 @@ class BupleurumMorphologyDB:
                 'bract_length': ('min_bract_length_cm', 'max_bract_length_cm'),
                 'umbellet_diameter': ('umbellet_diameter_min_cm', 'umbellet_diameter_max_cm'),
             }
-    
+            
             if filters:
                 for key, value in filters.items():
                     if value is None or value == '':
                         continue
-    
                     if key in single_range_map:
                         col_min, col_max = single_range_map[key]
                         if col_min in valid_columns and col_max in valid_columns:
-                            # 处理 NULL 值：如果某一端缺失，则忽略该端限制
-                            sql += f" AND ({col_min} <= ? OR {col_min} IS NULL) AND ({col_max} >= ? OR {col_max} IS NULL)"
+                            sql += f" AND ({col_min} <= %s OR {col_min} IS NULL) AND ({col_max} >= %s OR {col_max} IS NULL)"
                             params.extend([float(value), float(value)])
                     else:
-                        # 文本字段模糊匹配
                         if key in valid_columns:
-                            sql += f" AND {key} LIKE ?"
+                            sql += f" AND {key} LIKE %s"
                             params.append(f"%{value}%")
-                        else:
-                            print(f"忽略未知的筛选字段: {key}")
-    
+            
             sql += " ORDER BY species_name"
             cursor.execute(sql, params)
-            return [dict(row) for row in cursor.fetchall()]
-                
-    def import_descriptions_from_excel(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """
-        从“柴胡表型库”DataFrame导入物种描述，更新到现有物种记录。
-        期望的DataFrame结构：至少包含两列，第一列为物种名称，第二列为详细描述。
-        如果存在第三列（英文描述），也会被合并。
-        """
-        results = {
-            'total': len(df),
-            'matched': 0,
-            'updated': 0,
-            'not_found': [],
-            'errors': []
-        }
-        
-        # 获取所有现有物种名称（用于快速匹配）
-        existing_names = {name.lower().strip(): name for name in self.get_all_species_names()}
-        
-        for idx, row in df.iterrows():
-            try:
-                # 假设第一列是物种名称，第二列是中文描述，第四列是英文描述（根据您提供的表型库结构调整）
-                name_cell = str(row.iloc[0]).strip()
-                if pd.isna(name_cell) or name_cell == '':
-                    continue
-                    
-                # 提取描述：第二列（中文） + 第四列（英文）如果有的话
-                desc_cn = str(row.iloc[1]) if len(row) > 1 and not pd.isna(row.iloc[1]) else ''
-                desc_en = str(row.iloc[3]) if len(row) > 3 and not pd.isna(row.iloc[3]) else ''
-                
-                # 合并描述，可以用分隔符分开
-                full_description = desc_cn
-                if desc_en:
-                    full_description += "\n\n[英文描述]\n" + desc_en
-                
-                # 尝试匹配物种名称
-                matched_key = name_cell.lower().strip()
-                if matched_key in existing_names:
-                    db_name = existing_names[matched_key]
-                    # 更新数据库中的 description 字段
-                    with self.connect() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "UPDATE bupleurum_species SET description = ? WHERE species_name = ?",
-                            (full_description, db_name)
-                        )
-                        if cursor.rowcount > 0:
-                            results['updated'] += 1
-                    results['matched'] += 1
-                else:
-                    results['not_found'].append(name_cell)
-                    
-            except Exception as e:
-                results['errors'].append(f"行{idx+2}: {str(e)}")
-        
-        return results
-        
+            return cursor.fetchall()
+    
     def get_statistics(self) -> Dict[str, Any]:
-        """获取数据库统计信息"""
         with self.connect() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as total FROM bupleurum_species")
+            total_species = cursor.fetchone()['total']
             
-            cursor.execute("SELECT COUNT(*) FROM bupleurum_species")
-            total_species = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT growth_form) as count FROM bupleurum_species")
+            growth_forms = cursor.fetchone()['count']
             
-            cursor.execute("SELECT COUNT(DISTINCT growth_form) FROM bupleurum_species")
-            growth_forms = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT leaf_shape) as count FROM bupleurum_species WHERE leaf_shape != ''")
+            leaf_shapes = cursor.fetchone()['count']
             
-            cursor.execute("SELECT COUNT(DISTINCT leaf_shape) FROM bupleurum_species WHERE leaf_shape != ''")
-            leaf_shapes = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(DISTINCT fruit_shape) FROM bupleurum_species WHERE fruit_shape != ''")
-            fruit_shapes = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT fruit_shape) as count FROM bupleurum_species WHERE fruit_shape != ''")
+            fruit_shapes = cursor.fetchone()['count']
             
             return {
                 'total_species': total_species,
@@ -463,36 +393,40 @@ class BupleurumMorphologyDB:
             }
     
     def get_all_species_names(self) -> set:
-        """获取所有物种名称"""
         with self.connect() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT species_name FROM bupleurum_species")
-            return {row[0] for row in cursor.fetchall()}
+            return {row['species_name'] for row in cursor.fetchall()}
     
     def get_distinct_growth_forms(self) -> List[str]:
-        """获取所有不同的株型"""
         with self.connect() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT growth_form FROM bupleurum_species WHERE growth_form IS NOT NULL AND growth_form != '' ORDER BY growth_form")
-            return [row[0] for row in cursor.fetchall()]
+            return [row['growth_form'] for row in cursor.fetchall()]
     
     def clear_database(self):
-        """清空数据库"""
         with self.connect() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM bupleurum_species")
             conn.commit()
     
     def export_to_excel(self) -> pd.DataFrame:
-        """导出数据为DataFrame"""
-        with self.connect() as conn:
-            df = pd.read_sql_query("SELECT * FROM bupleurum_species ORDER BY species_name", conn)
-            return df
+        # 使用 SQLAlchemy 引擎
+        if self.engine is None:
+            self.connect()  # 确保 engine 已创建
+        df = pd.read_sql_query("SELECT * FROM bupleurum_species ORDER BY species_name", self.engine)
+        return df
 
 # 初始化数据库
 @st.cache_resource
 def get_database():
-    return BupleurumMorphologyDB()
+    db = BupleurumMorphologyDB()
+    # 测试连接
+    conn = db.connect()
+    if conn:
+        # 确保表存在（第一次运行时创建）
+        db.initialize_database()
+    return db
 
 db = get_database()
 
@@ -1647,7 +1581,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
